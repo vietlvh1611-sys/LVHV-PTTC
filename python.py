@@ -126,7 +126,7 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
 
 # --- Chức năng 1: Tải File ---
 uploaded_file = st.file_uploader(
-    "1. Tải file Excel/CSV Báo cáo Tài chính (KHOẢN MỤC | 2023-12-31 | 2024-12-31)",
+    "1. Tải file Excel/CSV Báo cáo Tài chính (KHOẢN MỤC | 2023 | 2024)",
     type=['xlsx', 'xls', 'csv']
 )
 
@@ -148,18 +148,21 @@ if uploaded_file is not None:
         df_raw = df_raw.rename(columns={df_raw.columns[0]: 'Chỉ tiêu'})
         
         # 2. Xác định cột năm gần nhất ('Năm sau') và năm trước đó ('Năm trước')
-        # Dựa vào snippet, các cột giá trị là 2023-12-31 và 2024-12-31 (thường là cột thứ 3 và 4 sau khi bỏ qua 1 header)
         
-        # Tìm các cột có chứa giá trị năm
-        value_cols = [col for col in df_raw.columns if '202' in str(col)]
+        # TÌM KIẾM CỘT NĂM LINH HOẠT HƠN
+        value_cols = []
+        for col in df_raw.columns:
+            col_str = str(col)
+            # Tìm kiếm các chuỗi chứa năm 20XX (ví dụ: '2023-12-31', 'NĂM 2024', '2023')
+            if '20' in col_str and len(col_str) >= 4 and col_str[:4].isdigit():
+                value_cols.append(col)
         
         if len(value_cols) < 2:
             st.warning(f"Chỉ tìm thấy {len(value_cols)} cột năm. Ứng dụng cần ít nhất 2 năm để so sánh.")
             st.stop()
             
-        # Chọn 2 cột năm gần nhất để làm Năm trước/Năm sau (Ví dụ: 2023-12-31 và 2024-12-31)
-        # Sắp xếp để đảm bảo năm sau là cột có tên lớn hơn
-        value_cols.sort(reverse=True)
+        # Chọn 2 cột năm gần nhất (Sắp xếp theo tên cột, giả sử tên cột năm là yyyy-mm-dd hoặc NĂM yyyy)
+        value_cols.sort(key=lambda x: str(x), reverse=True)
         
         col_nam_sau = value_cols[0] 
         col_nam_truoc = value_cols[1]
