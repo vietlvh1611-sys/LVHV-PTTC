@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
-# Loại bỏ import GenerationConfig không cần thiết nếu không dùng config
-# from google.genai.types import GenerationConfig 
+# Thêm import cho SystemInstruction
+from google.genai.types import SystemInstruction
 
 # --- Khởi tạo State cho Chatbot và Dữ liệu ---
 # Lưu trữ lịch sử chat
@@ -69,22 +69,25 @@ def get_ai_analysis(data_for_ai, api_key):
         client = genai.Client(api_key=api_key)
         model_name = 'gemini-2.5-flash' 
         
-        system_instruction = (
+        system_instruction_text = (
             "Bạn là một chuyên gia phân tích tài chính chuyên nghiệp. "
             "Dựa trên dữ liệu đã cung cấp, hãy đưa ra một nhận xét khách quan, ngắn gọn (khoảng 3-4 đoạn) về tình hình tài chính của doanh nghiệp. "
             "Đánh giá tập trung vào tốc độ tăng trưởng, thay đổi cơ cấu tài sản và khả năng thanh toán hiện hành."
         )
+        
+        # SỬA LỖI: Tạo đối tượng SystemInstruction
+        system_instruction_obj = SystemInstruction(parts=[system_instruction_text])
 
         prompt = f"""
         Dữ liệu thô và chỉ số:
         {data_for_ai}
         """
 
-        # SỬA LỖI: Truyền system_instruction trực tiếp vào hàm generate_content
+        # SỬA LỖI: Truyền system_instruction là một đối tượng
         response = client.models.generate_content(
             model=model_name,
             contents=prompt,
-            system_instruction=system_instruction
+            system_instruction=system_instruction_obj
         )
         return response.text
 
@@ -103,13 +106,16 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
         model_name = 'gemini-2.5-flash'
         
         # 1. Định nghĩa System Instruction
-        system_instruction = (
+        system_instruction_text = (
             "Bạn là một trợ lý phân tích tài chính thông minh (Financial Analyst Assistant). "
             "Bạn phải trả lời các câu hỏi của người dùng dựa trên dữ liệu tài chính đã xử lý sau. "
             "Dữ liệu này bao gồm 'Tốc độ tăng trưởng (%)' và 'Tỷ trọng Năm trước/sau (%)' của các chỉ tiêu Báo cáo tài chính, cùng với các chỉ số thanh toán. "
             "Nếu người dùng hỏi một câu không liên quan đến dữ liệu tài chính hoặc phân tích, hãy lịch sự từ chối trả lời. "
             "Dữ liệu tài chính đã xử lý (được trình bày dưới dạng Markdown để bạn dễ hiểu): \n\n" + context_data
         )
+        
+        # SỬA LỖI: Tạo đối tượng SystemInstruction
+        system_instruction_obj = SystemInstruction(parts=[system_instruction_text])
         
         # 2. Chuyển đổi lịch sử Streamlit sang định dạng Gemini
         gemini_history = []
@@ -121,11 +127,11 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
         # 3. Thêm prompt mới nhất vào cuối lịch sử
         gemini_history.append({"role": "user", "parts": [{"text": prompt}]})
 
-        # 4. Gọi API, SỬA LỖI: Truyền system_instruction trực tiếp vào hàm generate_content
+        # 4. Gọi API, SỬA LỖI: Truyền system_instruction là một đối tượng
         response = client.models.generate_content(
             model=model_name,
             contents=gemini_history,
-            system_instruction=system_instruction
+            system_instruction=system_instruction_obj
         )
         return response.text
 
