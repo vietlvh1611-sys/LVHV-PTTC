@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
+# Thêm import cho GenerationConfig
+from google.genai.types import GenerationConfig
 
 # --- Khởi tạo State cho Chatbot và Dữ liệu ---
 # Lưu trữ lịch sử chat
@@ -66,17 +68,22 @@ def get_ai_analysis(data_for_ai, api_key):
     try:
         client = genai.Client(api_key=api_key)
         model_name = 'gemini-2.5-flash' 
+        
+        system_instruction = (
+            "Bạn là một chuyên gia phân tích tài chính chuyên nghiệp. "
+            "Dựa trên dữ liệu đã cung cấp, hãy đưa ra một nhận xét khách quan, ngắn gọn (khoảng 3-4 đoạn) về tình hình tài chính của doanh nghiệp. "
+            "Đánh giá tập trung vào tốc độ tăng trưởng, thay đổi cơ cấu tài sản và khả năng thanh toán hiện hành."
+        )
 
         prompt = f"""
-        Bạn là một chuyên gia phân tích tài chính chuyên nghiệp. Dựa trên các chỉ số tài chính sau, hãy đưa ra một nhận xét khách quan, ngắn gọn (khoảng 3-4 đoạn) về tình hình tài chính của doanh nghiệp. Đánh giá tập trung vào tốc độ tăng trưởng, thay đổi cơ cấu tài sản và khả năng thanh toán hiện hành.
-        
         Dữ liệu thô và chỉ số:
         {data_for_ai}
         """
 
         response = client.models.generate_content(
             model=model_name,
-            contents=prompt
+            contents=prompt,
+            config=GenerationConfig(system_instruction=system_instruction)
         )
         return response.text
 
@@ -110,11 +117,14 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
             role = "user" if msg["role"] == "user" else "model"
             gemini_history.append({"role": role, "parts": [{"text": msg["content"]}]})
         
-        # 3. Gọi API, model sẽ tự động lấy prompt cuối cùng từ contents
+        # 3. Thêm prompt mới nhất vào cuối lịch sử
+        gemini_history.append({"role": "user", "parts": [{"text": prompt}]})
+
+        # 4. Gọi API, sử dụng GenerationConfig để truyền system_instruction
         response = client.models.generate_content(
             model=model_name,
-            contents=gemini_history, # Gửi toàn bộ lịch sử
-            system_instruction=system_instruction
+            contents=gemini_history,
+            config=GenerationConfig(system_instruction=system_instruction)
         )
         return response.text
 
