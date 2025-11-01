@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
+# Thêm import cho GenerationConfig để truyền system_instruction
+from google.genai.types import GenerationConfig 
 # LƯU Ý LỖI: Loại bỏ import SystemInstruction vì không tương thích trong môi trường này
 # from google.genai.types import SystemInstruction
 
@@ -75,21 +77,20 @@ def get_ai_analysis(data_for_ai, api_key):
             "Đánh giá tập trung vào tốc độ tăng trưởng, thay đổi cơ cấu tài sản và khả năng thanh toán hiện hành."
         )
         
-        # SỬA LỖI: Định nghĩa system_instruction dưới dạng Content với role='system'
-        system_content = {
-            "role": "system", 
-            "parts": [{"text": system_instruction_text}]
-        }
+        # SỬA LỖI: Loại bỏ role='system', truyền system_instruction qua config
+        config = GenerationConfig(system_instruction=system_instruction_text)
+
 
         user_prompt = f"""
         Dữ liệu thô và chỉ số:
         {data_for_ai}
         """
 
-        # Gửi system_content trước, sau đó là user_prompt
+        # Truyền prompt duy nhất
         response = client.models.generate_content(
             model=model_name,
-            contents=[system_content, user_prompt]
+            contents=user_prompt, # Chỉ truyền prompt người dùng
+            config=config # Truyền hướng dẫn hệ thống qua config
         )
         return response.text
 
@@ -116,30 +117,26 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
             "Dữ liệu tài chính đã xử lý (được trình bày dưới dạng Markdown để bạn dễ hiểu): \n\n" + context_data
         )
         
-        # SỬA LỖI: Định nghĩa system_instruction dưới dạng Content với role='system'
-        system_content = {
-            "role": "system", 
-            "parts": [{"text": system_instruction_text}]
-        }
+        # SỬA LỖI: Loại bỏ role='system', truyền system_instruction qua config
+        config = GenerationConfig(system_instruction=system_instruction_text)
         
         # 2. Chuyển đổi lịch sử Streamlit sang định dạng Gemini
         gemini_history = []
         # Bắt đầu từ tin nhắn thứ hai trong lịch sử ST (bỏ qua tin nhắn chào mừng đầu tiên)
         for msg in chat_history_st[1:]: 
+            # Đảm bảo chỉ có role 'user' và 'model' được sử dụng
             role = "user" if msg["role"] == "user" else "model"
             gemini_history.append({"role": role, "parts": [{"text": msg["content"]}]})
         
-        # 3. Thêm system_content vào đầu lịch sử
-        # Thêm system_content vào đầu contents để làm bối cảnh
-        full_contents = [system_content] + gemini_history
-        
-        # 4. Thêm prompt mới nhất vào cuối contents
+        # 3. Thêm prompt mới nhất vào cuối contents (Không cần thêm System Content ở đây nữa)
+        full_contents = gemini_history
         full_contents.append({"role": "user", "parts": [{"text": prompt}]})
 
-        # 5. Gọi API
+        # 4. Gọi API
         response = client.models.generate_content(
             model=model_name,
-            contents=full_contents
+            contents=full_contents, # Chỉ truyền lịch sử chat (user/model)
+            config=config # Truyền hướng dẫn hệ thống qua config
         )
         return response.text
 
