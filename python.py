@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
-# Thêm import cho SystemInstruction
-from google.genai.types import SystemInstruction
+# LƯU Ý LỖI: Loại bỏ import SystemInstruction vì không tương thích trong môi trường này
+# from google.genai.types import SystemInstruction
 
 # --- Khởi tạo State cho Chatbot và Dữ liệu ---
 # Lưu trữ lịch sử chat
@@ -75,19 +75,21 @@ def get_ai_analysis(data_for_ai, api_key):
             "Đánh giá tập trung vào tốc độ tăng trưởng, thay đổi cơ cấu tài sản và khả năng thanh toán hiện hành."
         )
         
-        # SỬA LỖI: Tạo đối tượng SystemInstruction
-        system_instruction_obj = SystemInstruction(parts=[system_instruction_text])
+        # SỬA LỖI: Định nghĩa system_instruction dưới dạng Content với role='system'
+        system_content = {
+            "role": "system", 
+            "parts": [{"text": system_instruction_text}]
+        }
 
-        prompt = f"""
+        user_prompt = f"""
         Dữ liệu thô và chỉ số:
         {data_for_ai}
         """
 
-        # SỬA LỖI: Truyền system_instruction là một đối tượng
+        # Gửi system_content trước, sau đó là user_prompt
         response = client.models.generate_content(
             model=model_name,
-            contents=prompt,
-            system_instruction=system_instruction_obj
+            contents=[system_content, user_prompt]
         )
         return response.text
 
@@ -114,8 +116,11 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
             "Dữ liệu tài chính đã xử lý (được trình bày dưới dạng Markdown để bạn dễ hiểu): \n\n" + context_data
         )
         
-        # SỬA LỖI: Tạo đối tượng SystemInstruction
-        system_instruction_obj = SystemInstruction(parts=[system_instruction_text])
+        # SỬA LỖI: Định nghĩa system_instruction dưới dạng Content với role='system'
+        system_content = {
+            "role": "system", 
+            "parts": [{"text": system_instruction_text}]
+        }
         
         # 2. Chuyển đổi lịch sử Streamlit sang định dạng Gemini
         gemini_history = []
@@ -124,14 +129,17 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
             role = "user" if msg["role"] == "user" else "model"
             gemini_history.append({"role": role, "parts": [{"text": msg["content"]}]})
         
-        # 3. Thêm prompt mới nhất vào cuối lịch sử
-        gemini_history.append({"role": "user", "parts": [{"text": prompt}]})
+        # 3. Thêm system_content vào đầu lịch sử
+        # Thêm system_content vào đầu contents để làm bối cảnh
+        full_contents = [system_content] + gemini_history
+        
+        # 4. Thêm prompt mới nhất vào cuối contents
+        full_contents.append({"role": "user", "parts": [{"text": prompt}]})
 
-        # 4. Gọi API, SỬA LỖI: Truyền system_instruction là một đối tượng
+        # 5. Gọi API
         response = client.models.generate_content(
             model=model_name,
-            contents=gemini_history,
-            system_instruction=system_instruction_obj
+            contents=full_contents
         )
         return response.text
 
