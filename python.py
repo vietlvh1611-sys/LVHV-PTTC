@@ -1,9 +1,15 @@
 # python.py
-
 import streamlit as st
 import pandas as pd
-from google import genai
-from google.genai.errors import APIError
+from google import genai # Giữ nguyên import gốc của bạn
+from google.genai.errors import APIError # Giữ nguyên import gốc của bạn
+
+# ******************************* PHẦN THÊM MỚI (Import) *******************************
+# Import thư viện Gemini chuẩn cho chức năng Chat,
+# Dùng tên 'genai_chat_lib' để tránh xung đột với thư viện 'genai' bạn đã import
+import google.generativeai as genai_chat_lib
+# ******************************* KẾT THÚC PHẦN THÊM MỚI *******************************
+
 
 # --- Cấu hình Trang Streamlit ---
 st.set_page_config(
@@ -53,12 +59,12 @@ def process_financial_data(df):
     
     return df
 
-# --- Hàm gọi API Gemini ---
+# --- Hàm gọi API Gemini (Giữ nguyên hàm gốc của bạn) ---
 def get_ai_analysis(data_for_ai, api_key):
     """Gửi dữ liệu phân tích đến Gemini API và nhận nhận xét."""
     try:
         client = genai.Client(api_key=api_key)
-        model_name = 'gemini-2.5-flash' 
+        model_name = 'gemini-2.5-flash' # Lưu ý: Model này có thể không tồn tại, bạn nên kiểm tra lại (vd: 'gemini-1.5-flash')
 
         prompt = f"""
         Bạn là một chuyên gia phân tích tài chính chuyên nghiệp. Dựa trên các chỉ số tài chính sau, hãy đưa ra một nhận xét khách quan, ngắn gọn (khoảng 3-4 đoạn) về tình hình tài chính của doanh nghiệp. Đánh giá tập trung vào tốc độ tăng trưởng, thay đổi cơ cấu tài sản và khả năng thanh toán hiện hành.
@@ -124,9 +130,12 @@ if uploaded_file is not None:
                 no_ngan_han_N = df_processed[df_processed['Chỉ tiêu'].str.contains('NỢ NGẮN HẠN', case=False, na=False)]['Năm sau'].iloc[0]  
                 no_ngan_han_N_1 = df_processed[df_processed['Chỉ tiêu'].str.contains('NỢ NGẮN HẠN', case=False, na=False)]['Năm trước'].iloc[0]
 
-                # Tính toán
-                thanh_toan_hien_hanh_N = tsnh_n / no_ngan_han_N
-                thanh_toan_hien_hanh_N_1 = tsnh_n_1 / no_ngan_han_N_1
+                # Tính toán (Thêm xử lý chia cho 0)
+                divisor_nnh_n = no_ngan_han_N if no_ngan_han_N != 0 else 1e-9
+                divisor_nnh_n_1 = no_ngan_han_N_1 if no_ngan_han_N_1 != 0 else 1e-9
+
+                thanh_toan_hien_hanh_N = tsnh_n / divisor_nnh_n
+                thanh_toan_hien_hanh_N_1 = tsnh_n_1 / divisor_nnh_n_1
                 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -144,6 +153,10 @@ if uploaded_file is not None:
             except IndexError:
                  st.warning("Thiếu chỉ tiêu 'TÀI SẢN NGẮN HẠN' hoặc 'NỢ NGẮN HẠN' để tính chỉ số.")
                  thanh_toan_hien_hanh_N = "N/A" # Dùng để tránh lỗi ở Chức năng 5
+                 thanh_toan_hien_hanh_N_1 = "N/A"
+            except ZeroDivisionError:
+                 st.warning("Nợ ngắn hạn bằng 0, không thể tính Chỉ số Thanh toán Hiện hành.")
+                 thanh_toan_hien_hanh_N = "N/A"
                  thanh_toan_hien_hanh_N_1 = "N/A"
             
             # --- Chức năng 5: Nhận xét AI ---
@@ -174,7 +187,7 @@ if uploaded_file is not None:
                         st.markdown("**Kết quả Phân tích từ Gemini AI:**")
                         st.info(ai_result)
                 else:
-                     st.error("Lỗi: Không tìm thấy Khóa API. Vui lòng cấu hình Khóa 'GEMINI_API_KEY' trong Streamlit Secrets.")
+                    st.error("Lỗi: Không tìm thấy Khóa API. Vui lòng cấu hình Khóa 'GEMINI_API_KEY' trong Streamlit Secrets.")
 
     except ValueError as ve:
         st.error(f"Lỗi cấu trúc dữ liệu: {ve}")
@@ -183,3 +196,61 @@ if uploaded_file is not None:
 
 else:
     st.info("Vui lòng tải lên file Excel để bắt đầu phân tích.")
+
+
+# ******************************* PHẦN THÊM MỚI (Chatbot) *******************************
+st.divider()
+st.subheader("6. Trò chuyện Tự do với Gemini AI 💬")
+
+# Lấy API key từ secrets cho chatbot
+# Chúng ta dùng chung key 'GEMINI_API_KEY'
+CHAT_API_KEY = st.secrets.get("GEMINI_API_KEY")
+
+if not CHAT_API_KEY:
+    st.warning("Vui lòng cung cấp 'GEMINI_API_KEY' trong Streamlit Secrets để kích hoạt Chatbot.")
+else:
+    # Cấu hình API key cho thư viện chat (genai_chat_lib)
+    try:
+        genai_chat_lib.configure(api_key=CHAT_API_KEY)
+        
+        # Khởi tạo model (Dùng 'gemini-pro' là model tốt nhất cho chat)
+        chat_model = genai_chat_lib.GenerativeModel('gemini-pro')
+
+        # Khởi tạo chat session và lịch sử (nếu chưa có)
+        if "chat_session" not in st.session_state:
+            st.session_state.chat_session = chat_model.start_chat(history=[])
+            # 'chat_history' dùng để hiển thị, 'chat_session' dùng để gọi API
+            st.session_state.chat_history_display = [] 
+
+        # Hiển thị lịch sử chat đã lưu
+        for message in st.session_state.chat_history_display:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        # Xử lý input mới từ người dùng
+        if prompt := st.chat_input("Hỏi tôi bất cứ điều gì..."):
+            # Thêm câu hỏi của user vào lịch sử hiển thị
+            st.session_state.chat_history_display.append({"role": "user", "content": prompt})
+            
+            # Hiển thị câu hỏi của user
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # Gửi câu hỏi đến Gemini và nhận câu trả lời
+            with st.chat_message("assistant"):
+                with st.spinner("Gemini đang suy nghĩ..."):
+                    try:
+                        # Gửi prompt đến session chat đã lưu
+                        response = st.session_state.chat_session.send_message(prompt)
+                        response_text = response.text
+                        
+                        # Hiển thị và lưu câu trả lời
+                        st.markdown(response_text)
+                        st.session_state.chat_history_display.append({"role": "assistant", "content": response_text})
+                    
+                    except Exception as e:
+                        st.error(f"Đã xảy ra lỗi khi gọi Gemini: {e}")
+
+    except Exception as e:
+        st.error(f"Lỗi khi cấu hình hoặc khởi tạo Gemini (Chat): {e}")
+# ******************************* KẾT THÚC PHẦN THÊM MỚI *******************************
