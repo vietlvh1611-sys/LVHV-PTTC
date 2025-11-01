@@ -126,54 +126,67 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
 
 # --- Chức năng 1: Tải File ---
 uploaded_file = st.file_uploader(
-    "1. Tải file Excel/CSV Báo cáo Tài chính (KHOẢN MỤC | 2023 | 2024)",
+    "1. Tải file Excel/CSV Báo cáo Tài chính (KHOẢN MỤC | YYYY-MM-DD | YYYY-MM-DD)",
     type=['xlsx', 'xls', 'csv']
 )
 
 if uploaded_file is not None:
     try:
         # Xử lý file dựa trên định dạng
+        # CHUYỂN SANG DÙNG header=0 VÀ BỎ QUA HÀNG THỨ HAI ĐỂ LẤY ĐÚNG TÊN CỘT NGÀY THÁNG
         if uploaded_file.name.endswith(('.xlsx', '.xls')):
-            # Thử đọc Excel, bỏ qua 1 hàng đầu tiên
-            df_raw = pd.read_excel(uploaded_file, header=1)
+            # Đọc Excel, lấy hàng đầu tiên (index 0) làm header
+            df_raw = pd.read_excel(uploaded_file, header=0)
         elif uploaded_file.name.endswith('.csv'):
-            # Đọc CSV (có thể có nhiều hàng header), bỏ qua 1 hàng đầu tiên
-            df_raw = pd.read_csv(uploaded_file, header=1)
+            # Đọc CSV, lấy hàng đầu tiên (index 0) làm header
+            df_raw = pd.read_csv(uploaded_file, header=0)
         else:
             raise Exception("Định dạng file không được hỗ trợ.")
 
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ĐỂ PHÙ HỢP VỚI LOGIC CŨ ---
         
+        # Hàng 1 (index 1) trong file gốc là hàng phụ (SS (+/-), SS (%)) nên ta xóa nó đi nếu nó đã bị đọc vào DF
+        # Nếu dùng header=0, hàng này sẽ trở thành hàng đầu tiên của dữ liệu
+        
         # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' (Dựa trên snippet 'KHOẢN MỤC')
+        # Cột đầu tiên trong DF sau khi dùng header=0 là 'KHOẢN MỤC'
         df_raw = df_raw.rename(columns={df_raw.columns[0]: 'Chỉ tiêu'})
         
         # 2. Xác định cột năm gần nhất ('Năm sau') và năm trước đó ('Năm trước')
         
-        # TÌM KIẾM CỘT NĂM LINH HOẠT HƠN
+        # TÌM KIẾM CỘT NGÀY THÁNG LINH HOẠT
         value_cols = []
         for col in df_raw.columns:
             col_str = str(col)
-            # Tìm kiếm các chuỗi chứa năm 20XX (ví dụ: '2023-12-31', 'NĂM 2024', '2023')
-            if '20' in col_str and len(col_str) >= 4 and col_str[:4].isdigit():
-                value_cols.append(col)
+            # Tìm kiếm các chuỗi chứa năm 20XX (Ví dụ: '2023-12-31')
+            # Cột cần tìm là chuỗi có dạng ngày tháng yyyy-mm-dd
+            if len(col_str) >= 10 and col_str[4] == '-' and col_str[7] == '-' and col_str[:4].isdigit():
+                 value_cols.append(col)
+            # Hoặc tìm các cột có tên là năm đơn thuần (ví dụ: 2023)
+            elif col_str.isdigit() and len(col_str) == 4 and col_str.startswith('20'):
+                 value_cols.append(col)
         
         if len(value_cols) < 2:
             st.warning(f"Chỉ tìm thấy {len(value_cols)} cột năm. Ứng dụng cần ít nhất 2 năm để so sánh.")
             st.stop()
             
-        # Chọn 2 cột năm gần nhất (Sắp xếp theo tên cột, giả sử tên cột năm là yyyy-mm-dd hoặc NĂM yyyy)
+        # Chọn 2 cột năm gần nhất (Sắp xếp theo tên cột/ngày tháng)
         value_cols.sort(key=lambda x: str(x), reverse=True)
         
         col_nam_sau = value_cols[0] 
         col_nam_truoc = value_cols[1]
-
-        # 3. Tạo DataFrame mới chỉ chứa 3 cột cần thiết
+        
+        # 3. Xóa các hàng chỉ chứa dữ liệu phụ (hàng phụ của Header gốc)
+        # Hàng 0 trong df_raw (hàng thứ hai trong file gốc) thường chứa các giá trị NaN và tiêu đề phụ như "SS (+/-)"
+        df_raw = df_raw.drop(df_raw.index[0])
+        
+        # 4. Tạo DataFrame mới chỉ chứa 3 cột cần thiết
         df_final = df_raw[['Chỉ tiêu', col_nam_truoc, col_nam_sau]].copy()
         
-        # 4. Đổi tên cột để phù hợp với hàm process_financial_data
+        # 5. Đổi tên cột để phù hợp với hàm process_financial_data
         df_final.columns = ['Chỉ tiêu', 'Năm trước', 'Năm sau']
         
-        # 5. Lọc bỏ các hàng NaN ở cột 'Chỉ tiêu' (các hàng trống)
+        # 6. Lọc bỏ các hàng NaN ở cột 'Chỉ tiêu' (các hàng trống)
         df_final = df_final.dropna(subset=['Chỉ tiêu'])
         
         # Xử lý dữ liệu
