@@ -1,4 +1,4 @@
-port streamlit as st
+import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
@@ -27,7 +27,7 @@ def process_financial_data(df):
     # Đảm bảo các giá trị là số để tính toán
     numeric_cols = ['Năm trước', 'Năm sau']
     for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        df[col] = pd.to_numeric(col, errors='coerce').fillna(0)
     
     # 1. Tính Tốc độ Tăng trưởng
     # Dùng .replace(0, 1e-9) cho Series Pandas để tránh lỗi chia cho 0
