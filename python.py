@@ -27,7 +27,8 @@ def process_financial_data(df):
     # Đảm bảo các giá trị là số để tính toán
     numeric_cols = ['Năm trước', 'Năm sau']
     for col in numeric_cols:
-        df[col] = pd.to_numeric(col, errors='coerce').fillna(0)
+        # Sử dụng df[col] = df[col]... thay vì df[col] = pd.to_numeric(col... như lỗi trước đó
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     
     # 1. Tính Tốc độ Tăng trưởng
     # Dùng .replace(0, 1e-9) cho Series Pandas để tránh lỗi chia cho 0
@@ -37,17 +38,18 @@ def process_financial_data(df):
 
     # 2. Tính Tỷ trọng theo Tổng Tài sản
     # Lọc chỉ tiêu "TỔNG CỘNG TÀI SẢN"
+    # LƯU Ý: Đảm bảo dữ liệu của bạn có dòng này (hoặc "Tài sản")
     tong_tai_san_row = df[df['Chỉ tiêu'].str.contains('TỔNG CỘNG TÀI SẢN', case=False, na=False)]
     
     if tong_tai_san_row.empty:
-        raise ValueError("Không tìm thấy chỉ tiêu 'TỔNG CỘNG TÀI SẢN'.")
+        # Thử tìm từ khóa chung hơn
+        tong_tai_san_row = df[df['Chỉ tiêu'].str.contains('TỔNG CỘNG', case=False, na=False)]
+        if tong_tai_san_row.empty:
+            raise ValueError("Không tìm thấy chỉ tiêu 'TỔNG CỘNG TÀI SẢN' hoặc 'TỔNG CỘNG' để tính tỷ trọng. Vui lòng kiểm tra tên chỉ tiêu trong file.")
 
+    # Lấy giá trị của dòng TỔNG CỘNG (có thể có nhiều dòng nếu chỉ tìm 'TỔNG CỘNG', nên dùng .iloc[0])
     tong_tai_san_N_1 = tong_tai_san_row['Năm trước'].iloc[0]
     tong_tai_san_N = tong_tai_san_row['Năm sau'].iloc[0]
-
-    # ******************************* PHẦN SỬA LỖI BẮT ĐẦU *******************************
-    # Lỗi xảy ra khi dùng .replace() trên giá trị đơn lẻ (numpy.int64).
-    # Sử dụng điều kiện ternary để xử lý giá trị 0 thủ công cho mẫu số.
     
     divisor_N_1 = tong_tai_san_N_1 if tong_tai_san_N_1 != 0 else 1e-9
     divisor_N = tong_tai_san_N if tong_tai_san_N != 0 else 1e-9
@@ -55,7 +57,6 @@ def process_financial_data(df):
     # Tính tỷ trọng với mẫu số đã được xử lý
     df['Tỷ trọng Năm trước (%)'] = (df['Năm trước'] / divisor_N_1) * 100
     df['Tỷ trọng Năm sau (%)'] = (df['Năm sau'] / divisor_N) * 100
-    # ******************************* PHẦN SỬA LỖI KẾT THÚC *******************************
     
     return df
 
@@ -103,17 +104,13 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
         )
         
         # 2. Chuyển đổi lịch sử Streamlit sang định dạng Gemini
-        # Bỏ qua system instruction ban đầu (vì nó đã được đưa vào system_instruction)
         gemini_history = []
         # Bắt đầu từ tin nhắn thứ hai trong lịch sử ST (bỏ qua tin nhắn chào mừng đầu tiên)
         for msg in chat_history_st[1:]: 
             role = "user" if msg["role"] == "user" else "model"
             gemini_history.append({"role": role, "parts": [{"text": msg["content"]}]})
         
-        # 3. Thêm prompt hiện tại của người dùng
-        # Tin nhắn cuối cùng trong lịch sử ST là prompt hiện tại
-        current_prompt_text = chat_history_st[-1]["content"] 
-
+        # 3. Gọi API, model sẽ tự động lấy prompt cuối cùng từ contents
         response = client.models.generate_content(
             model=model_name,
             contents=gemini_history, # Gửi toàn bộ lịch sử
@@ -129,19 +126,55 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
 
 # --- Chức năng 1: Tải File ---
 uploaded_file = st.file_uploader(
-    "1. Tải file Excel Báo cáo Tài chính (Chỉ tiêu | Năm trước | Năm sau)",
-    type=['xlsx', 'xls']
+    "1. Tải file Excel/CSV Báo cáo Tài chính (KHOẢN MỤC | 2023-12-31 | 2024-12-31)",
+    type=['xlsx', 'xls', 'csv']
 )
 
 if uploaded_file is not None:
     try:
-        df_raw = pd.read_excel(uploaded_file)
+        # Xử lý file dựa trên định dạng
+        if uploaded_file.name.endswith(('.xlsx', '.xls')):
+            # Thử đọc Excel, bỏ qua 1 hàng đầu tiên
+            df_raw = pd.read_excel(uploaded_file, header=1)
+        elif uploaded_file.name.endswith('.csv'):
+            # Đọc CSV (có thể có nhiều hàng header), bỏ qua 1 hàng đầu tiên
+            df_raw = pd.read_csv(uploaded_file, header=1)
+        else:
+            raise Exception("Định dạng file không được hỗ trợ.")
+
+        # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ĐỂ PHÙ HỢP VỚI LOGIC CŨ ---
         
-        # Tiền xử lý: Đảm bảo chỉ có 3 cột quan trọng
-        df_raw.columns = ['Chỉ tiêu', 'Năm trước', 'Năm sau']
+        # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' (Dựa trên snippet 'KHOẢN MỤC')
+        df_raw = df_raw.rename(columns={df_raw.columns[0]: 'Chỉ tiêu'})
+        
+        # 2. Xác định cột năm gần nhất ('Năm sau') và năm trước đó ('Năm trước')
+        # Dựa vào snippet, các cột giá trị là 2023-12-31 và 2024-12-31 (thường là cột thứ 3 và 4 sau khi bỏ qua 1 header)
+        
+        # Tìm các cột có chứa giá trị năm
+        value_cols = [col for col in df_raw.columns if '202' in str(col)]
+        
+        if len(value_cols) < 2:
+            st.warning(f"Chỉ tìm thấy {len(value_cols)} cột năm. Ứng dụng cần ít nhất 2 năm để so sánh.")
+            st.stop()
+            
+        # Chọn 2 cột năm gần nhất để làm Năm trước/Năm sau (Ví dụ: 2023-12-31 và 2024-12-31)
+        # Sắp xếp để đảm bảo năm sau là cột có tên lớn hơn
+        value_cols.sort(reverse=True)
+        
+        col_nam_sau = value_cols[0] 
+        col_nam_truoc = value_cols[1]
+
+        # 3. Tạo DataFrame mới chỉ chứa 3 cột cần thiết
+        df_final = df_raw[['Chỉ tiêu', col_nam_truoc, col_nam_sau]].copy()
+        
+        # 4. Đổi tên cột để phù hợp với hàm process_financial_data
+        df_final.columns = ['Chỉ tiêu', 'Năm trước', 'Năm sau']
+        
+        # 5. Lọc bỏ các hàng NaN ở cột 'Chỉ tiêu' (các hàng trống)
+        df_final = df_final.dropna(subset=['Chỉ tiêu'])
         
         # Xử lý dữ liệu
-        df_processed = process_financial_data(df_raw.copy())
+        df_processed = process_financial_data(df_final.copy())
 
         if df_processed is not None:
             
@@ -163,8 +196,6 @@ if uploaded_file is not None:
             st.subheader("4. Các Chỉ số Tài chính Cơ bản")
             
             try:
-                # Lọc giá trị cho Chỉ số Thanh toán Hiện hành (Ví dụ)
-                
                 # Lấy Tài sản ngắn hạn
                 tsnh_n = df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Năm sau'].iloc[0]
                 tsnh_n_1 = df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Năm trước'].iloc[0]
@@ -192,7 +223,7 @@ if uploaded_file is not None:
                     
             except IndexError:
                 st.warning("Thiếu chỉ tiêu 'TÀI SẢN NGẮN HẠN' hoặc 'NỢ NGẮN HẠN' để tính chỉ số.")
-                thanh_toan_hien_hanh_N = "N/A" # Giữ nguyên N/A để tránh lỗi khi tạo context
+                thanh_toan_hien_hanh_N = "N/A" 
                 thanh_toan_hien_hanh_N_1 = "N/A"
             except ZeroDivisionError:
                 st.error("Lỗi chia cho 0 khi tính chỉ số thanh toán. Vui lòng kiểm tra dữ liệu 'Nợ Ngắn Hạn' (Năm trước hoặc Năm sau)!")
@@ -200,7 +231,6 @@ if uploaded_file is not None:
                 thanh_toan_hien_hanh_N_1 = "N/A"
             
             # --- CẬP NHẬT DỮ LIỆU CHO CHATBOT (CONTEXT) ---
-            # Sử dụng các giá trị thanh_toan_hien_hanh_N đã được tính toán/xử lý lỗi
             data_for_chat_context = pd.DataFrame({
                 'Chỉ tiêu': [
                     'Toàn bộ Bảng phân tích (dữ liệu thô)', 
@@ -216,14 +246,13 @@ if uploaded_file is not None:
             st.session_state.data_for_chat = data_for_chat_context
             
             # Cập nhật tin nhắn chào mừng nếu data đã sẵn sàng
-            if st.session_state.messages[0]["content"].startswith("Xin chào!"):
+            if st.session_state.messages[0]["content"].startswith("Xin chào!") or st.session_state.messages[0]["content"].startswith("Phân tích"):
                  st.session_state.messages[0]["content"] = "Phân tích đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về 'Tốc độ tăng trưởng', 'Tỷ trọng' và 'Chỉ số thanh toán hiện hành' của báo cáo này."
 
             # --- Chức năng 5: Nhận xét AI ---
             st.subheader("5. Nhận xét Tình hình Tài chính (AI)")
             
             # Chuẩn bị dữ liệu để gửi cho AI (giống hệt logic data_for_chat_context)
-            # Thêm thông tin tăng trưởng tài sản ngắn hạn vào data_for_ai
             try:
                 tsnh_growth = f"{df_processed[df_processed['Chỉ tiêu'].str.contains('TÀI SẢN NGẮN HẠN', case=False, na=False)]['Tốc độ tăng trưởng (%)'].iloc[0]:.2f}%"
             except IndexError:
@@ -263,7 +292,7 @@ if uploaded_file is not None:
         st.session_state.data_for_chat = None # Reset chat context
 
 else:
-    st.info("Vui lòng tải lên file Excel để bắt đầu phân tích.")
+    st.info("Vui lòng tải lên file Excel hoặc CSV để bắt đầu phân tích.")
     st.session_state.data_for_chat = None # Đảm bảo context được reset khi chưa có file
 
 # --- Chức năng 6: Khung Chatbot tương tác ---
