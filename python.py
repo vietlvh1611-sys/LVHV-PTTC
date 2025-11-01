@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
-# Thêm import cho GenerationConfig
-from google.genai.types import GenerationConfig
+# Loại bỏ import GenerationConfig không cần thiết nếu không dùng config
+# from google.genai.types import GenerationConfig 
 
 # --- Khởi tạo State cho Chatbot và Dữ liệu ---
 # Lưu trữ lịch sử chat
@@ -80,10 +80,11 @@ def get_ai_analysis(data_for_ai, api_key):
         {data_for_ai}
         """
 
+        # SỬA LỖI: Truyền system_instruction trực tiếp vào hàm generate_content
         response = client.models.generate_content(
             model=model_name,
             contents=prompt,
-            config=GenerationConfig(system_instruction=system_instruction)
+            system_instruction=system_instruction
         )
         return response.text
 
@@ -120,11 +121,11 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
         # 3. Thêm prompt mới nhất vào cuối lịch sử
         gemini_history.append({"role": "user", "parts": [{"text": prompt}]})
 
-        # 4. Gọi API, sử dụng GenerationConfig để truyền system_instruction
+        # 4. Gọi API, SỬA LỖI: Truyền system_instruction trực tiếp vào hàm generate_content
         response = client.models.generate_content(
             model=model_name,
             contents=gemini_history,
-            config=GenerationConfig(system_instruction=system_instruction)
+            system_instruction=system_instruction
         )
         return response.text
 
