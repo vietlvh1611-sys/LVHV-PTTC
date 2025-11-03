@@ -178,20 +178,37 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None:
     try:
         
+        # -----------------------------------------------------------------
+        # HÀM CHUẨN HÓA TÊN CỘT ĐỂ DÙNG LỌC DF (LOẠI BỎ DATETIME OBJECT)
+        # -----------------------------------------------------------------
+        def clean_column_names(df):
+            # Tự động chuyển đổi tất cả tên cột sang chuỗi, loại bỏ phần giờ nếu là datetime
+            new_columns = []
+            for col in df.columns:
+                col_str = str(col)
+                # Nếu là đối tượng datetime, Pandas sẽ chuyển nó thành chuỗi 'YYYY-MM-DD 00:00:00'
+                if isinstance(col, pd.Timestamp) or (isinstance(col, str) and ' ' in col_str and col_str.endswith('00:00:00')):
+                    new_columns.append(col_str)
+                else:
+                    new_columns.append(col_str)
+            df.columns = new_columns
+            return df
+        # -----------------------------------------------------------------
+
         # --- ĐỌC DỮ LIỆU TỪ NHIỀU SHEET ---
-        # Đọc Sheet 1 (Bảng CĐKT) và Sheet 2 (KQKD)
         xls = pd.ExcelFile(uploaded_file)
         
         # Đọc Sheet 1 cho Bảng CĐKT
         try:
-            # Dùng header=0 để lấy tên cột là ngày tháng
             df_raw_bs = xls.parse(xls.sheet_names[0], header=0) 
+            df_raw_bs = clean_column_names(df_raw_bs) # CHUẨN HÓA CỘT BĐKT
         except Exception:
             raise Exception("Không thể đọc Sheet 1 (Bảng CĐKT). Vui lòng kiểm tra định dạng sheet.")
             
         # Đọc Sheet 2 cho Báo cáo Kết quả Kinh doanh (KQKD)
         try:
             df_raw_is = xls.parse(xls.sheet_names[1], header=0)
+            df_raw_is = clean_column_names(df_raw_is) # CHUẨN HÓA CỘT KQKD
         except Exception:
             # Nếu không tìm thấy sheet 2, tạo DataFrame rỗng
             df_raw_is = pd.DataFrame()
@@ -208,15 +225,13 @@ if uploaded_file is not None:
         # 2. Xác định cột năm/kỳ gần nhất ('Năm 3'), 'Năm 2', 'Năm 1'
         
         # TÌM KIẾM CỘT NGÀY THÁNG LINH HOẠT TRONG BẢNG CĐKT (Sheet 1)
-        value_cols_unique = {} # Dùng dictionary để đảm bảo key (giá trị ngày) là duy nhất
-        
-        # LƯU Ý QUAN TRỌNG: Cột gốc sẽ được lưu trữ để tránh lỗi Key Mismatch
+        value_cols_unique = {} 
         col_name_map = {} 
 
         for col in df_raw_bs.columns:
             col_str = str(col)
             
-            # Hàm phụ để chuẩn hóa tên cột (loại bỏ giờ và định dạng YYYY-MM-DD)
+            # Hàm phụ để chuẩn hóa tên cột (chỉ giữ lại YYYY-MM-DD)
             def normalize_date_col(name):
                 # Loại bỏ phần giờ nếu có
                 if ' ' in name:
@@ -229,13 +244,13 @@ if uploaded_file is not None:
             if len(normalized_name) >= 10 and normalized_name[4] == '-' and normalized_name[7] == '-' and normalized_name[:4].isdigit():
                  # Nếu tên ngày tháng (normalized_name) chưa có trong dict, thêm cột gốc (col) vào
                  if normalized_name not in value_cols_unique:
-                    value_cols_unique[normalized_name] = col
-                    col_name_map[normalized_name] = col_str # LƯU TÊN CỘT GỐC (KÈM GIỜ HOẶC DATETIME OBJECT)
+                    value_cols_unique[normalized_name] = col # normalized_name (YYYY-MM-DD)
+                    col_name_map[normalized_name] = col_str # LƯU TÊN CỘT GỐC (KÈM GIỜ/DATETIME)
             # Hoặc tìm các cột có tên là năm đơn thuần (VD: 2023)
             elif normalized_name.isdigit() and len(normalized_name) == 4 and normalized_name.startswith('20'):
                  if normalized_name not in value_cols_unique:
                     value_cols_unique[normalized_name] = col
-                    col_name_map[normalized_name] = col_str # LƯU TÊN CỘT GỐC (STRING)
+                    col_name_map[normalized_name] = col_str 
 
         # Lấy danh sách các tên chuẩn hóa không trùng lặp (Key của dictionary)
         normalized_names = list(value_cols_unique.keys())
@@ -274,12 +289,11 @@ if uploaded_file is not None:
 
         # Báo cáo KQKD
         if not df_raw_is.empty:
-            # Lấy 3 cột năm đã xác định ở Bảng CĐKT (SỬ DỤNG CỘT GỐC LÀM CHO CHẮC)
-            # Nếu tên cột trong Sheet 2 khác hoàn toàn tên cột trong Sheet 1, thì phải bỏ qua
             
             # Kiểm tra xem các cột gốc có tồn tại trong df_raw_is không
             valid_cols_is = [col for col in cols_to_keep if col in df_raw_is.columns]
             
+            # Sửa lỗi: Đảm bảo lọc được cột nếu tên cột là chuỗi (string)
             if len(valid_cols_is) == 4: # Phải có đủ 4 cột (Chỉ tiêu + 3 năm)
                 df_is_final = df_raw_is[valid_cols_is].copy() 
                 # Đảm bảo thứ tự cột đúng (Chỉ tiêu, N1, N2, N3)
@@ -291,7 +305,7 @@ if uploaded_file is not None:
                 df_is_final = df_is_final[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']].copy()
                 df_is_final = df_is_final.dropna(subset=['Chỉ tiêu'])
             else:
-                st.warning("Các cột năm trong Sheet 2 (KQKD) không khớp với Sheet 1 (Bảng CĐKT). Bỏ qua phân tích KQKD.")
+                st.warning("Các cột năm trong Sheet 2 (KQKD) không khớp với Sheet 1 (Bảng CĐKT) sau khi chuẩn hóa tên. Bỏ qua phân tích KQKD.")
                 df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
         else:
             df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
