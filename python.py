@@ -184,14 +184,15 @@ if uploaded_file is not None:
         
         # Đọc Sheet 1 cho Bảng CĐKT
         try:
-            df_raw_bs = xls.parse(xls.sheet_names[0], header=0)
-        except:
+            # Dùng header=0 để lấy tên cột là ngày tháng
+            df_raw_bs = xls.parse(xls.sheet_names[0], header=0) 
+        except Exception:
             raise Exception("Không thể đọc Sheet 1 (Bảng CĐKT). Vui lòng kiểm tra định dạng sheet.")
             
         # Đọc Sheet 2 cho Báo cáo Kết quả Kinh doanh (KQKD)
         try:
             df_raw_is = xls.parse(xls.sheet_names[1], header=0)
-        except:
+        except Exception:
             # Nếu không tìm thấy sheet 2, tạo DataFrame rỗng
             df_raw_is = pd.DataFrame()
             st.warning("Không tìm thấy Sheet 2 (Báo cáo KQKD). Chỉ phân tích Bảng CĐKT.")
@@ -240,9 +241,10 @@ if uploaded_file is not None:
         # Chọn 3 cột năm gần nhất (Sắp xếp theo tên cột/ngày tháng, mới nhất (Y3) lên đầu)
         value_cols.sort(key=lambda x: str(x), reverse=True)
         
-        col_nam_3 = value_cols[0] # Newest (Năm 3)
-        col_nam_2 = value_cols[1] # Middle (Năm 2)
-        col_nam_1 = value_cols[2] # Oldest (Năm 1)
+        # CHUYỂN TÊN CỘT GỐC SANG CHUỖI ĐỂ TRÁNH LỖI KEY MISMATCH KHI LỌC DF
+        col_nam_3 = str(value_cols[0]) # Newest (Năm 3)
+        col_nam_2 = str(value_cols[1]) # Middle (Năm 2)
+        col_nam_1 = str(value_cols[2]) # Oldest (Năm 1)
         
         
         # 3. Lọc bỏ hàng đầu tiên chứa các chỉ số so sánh (SS) không cần thiết
@@ -255,16 +257,19 @@ if uploaded_file is not None:
         
         
         # 4. Tạo DataFrame Bảng CĐKT và KQKD đã lọc (chỉ giữ lại 4 cột)
+        
+        # Tên cột gốc cần được lọc
+        cols_to_keep = ['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]
 
         # Bảng CĐKT
-        df_bs_final = df_raw_bs[['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]].copy()
+        df_bs_final = df_raw_bs[cols_to_keep].copy()
         df_bs_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
         df_bs_final = df_bs_final.dropna(subset=['Chỉ tiêu'])
 
         # Báo cáo KQKD
         if not df_raw_is.empty:
             # Lấy 3 cột năm đã xác định ở Bảng CĐKT
-            df_is_final = df_raw_is[['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]].copy()
+            df_is_final = df_raw_is[cols_to_keep].copy() # SỬA LỖI KEY ERROR TẠI ĐÂY
             df_is_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
             df_is_final = df_is_final.dropna(subset=['Chỉ tiêu'])
         else:
@@ -498,7 +503,8 @@ if uploaded_file is not None:
         st.error(f"Lỗi cấu trúc dữ liệu: {ve}")
         st.session_state.data_for_chat = None # Reset chat context
     except Exception as e:
-        st.error(f"Có lỗi xảy ra khi đọc hoặc xử lý file: {e}. Vui lòng kiểm tra định dạng file và đảm bảo có đủ 3 cột năm.")
+        # st.error(f"Có lỗi xảy ra khi đọc hoặc xử lý file: {e}. Vui lòng kiểm tra định dạng file và đảm bảo có đủ 3 cột năm.")
+        st.error(f"Có lỗi xảy ra khi đọc hoặc xử lý file: {e}.")
         st.session_state.data_for_chat = None # Reset chat context
 
 else:
