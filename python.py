@@ -440,6 +440,20 @@ if uploaded_file is not None:
         # CẬP NHẬT: THÊM DF THỨ 3 CHO TỶ TRỌNG
         df_bs_processed, df_is_processed, df_ratios_processed = process_financial_data(df_bs_final.copy(), df_is_final.copy())
 
+        # === [V15] LỌC BỎ CÁC DÒNG CÓ TẤT CẢ GIÁ TRỊ NĂM BẰNG 0 ===
+        def filter_zero_rows(df):
+            if df.empty:
+                return df
+            # Chỉ giữ lại các dòng mà tổng giá trị tuyệt đối của 3 cột năm KHÔNG bằng 0
+            mask = (df['Năm 1'].abs() + df['Năm 2'].abs() + df['Năm 3'].abs()) != 0
+            return df[mask].copy()
+
+        df_bs_processed = filter_zero_rows(df_bs_processed)
+        df_is_processed = filter_zero_rows(df_is_processed)
+        df_ratios_processed = filter_zero_rows(df_ratios_processed)
+        # === KẾT THÚC [V15] ===
+
+
         if df_bs_processed is not None:
             
             # -----------------------------------------------------
