@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
+import numpy as np # Import numpy để dùng np.nan
 
 # Tương thích cao nhất: System Instruction được truyền bằng cách ghép vào User Prompt
 
@@ -112,6 +113,7 @@ def highlight_financial_items(row):
 def process_financial_data(df_balance_sheet, df_income_statement):
     """
     Thực hiện các phép tính Tăng trưởng, So sánh Tuyệt đối, Tỷ trọng Cơ cấu, Tỷ trọng Chi phí/DT thuần và Chỉ số Tài chính.
+    [V25 - MỚI] Cập nhật thêm Vòng quay Hàng tồn kho và Thời gian tồn kho.
     [V24] Trả về tuple (df_bs_processed, df_is_processed, df_ratios_processed, df_financial_ratios)
     """
     
@@ -220,7 +222,72 @@ def process_financial_data(df_balance_sheet, df_income_statement):
         df_ratios['S.S Tương đối (%) (Y2 vs Y1)'] = df_ratios['Năm 2'] - df_ratios['Năm 1']
         
     # -----------------------------------------------------------------
-    # [V24] PHẦN 4: TÍNH CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG (Cập nhật 2 chỉ số)
+    # [V25 - MỚI] PHẦN 4: TÍNH VÒNG QUAY VÀ THỜI GIAN TỒN KHO
+    # -----------------------------------------------------------------
+    
+    # Lấy các giá trị cần thiết
+    cost_of_goods_sold = {y: get_value(df_is, 'Giá vốn hàng bán', y) for y in years}
+    inventory = {y: get_value(df_bs, 'Hàng tồn kho|HTK', y) for y in years}
+    
+    # Tính hàng tồn kho bình quân (Average Inventory)
+    avg_inventory = {}
+    for y in ['Năm 1', 'Năm 2', 'Năm 3']:
+        # Hàng tồn kho bình quân = (HTK_kỳ_này + HTK_kỳ_trước) / 2
+        # Cần HTK_N0 (kỳ trước Năm 1) để tính avg_N1. Giả định HTK_N0 = HTK_N1 nếu không có dữ liệu.
+        if y == 'Năm 1':
+            # Sử dụng HTK_N1 * 2 / 2 để tránh lỗi chia 0, nếu HTK_N0 không có
+            avg_inventory[y] = (inventory[y] + inventory[y]) / 2
+        elif y == 'Năm 2':
+            avg_inventory[y] = (inventory[y] + inventory['Năm 1']) / 2
+        elif y == 'Năm 3':
+            avg_inventory[y] = (inventory[y] + inventory['Năm 2']) / 2
+    
+    # Tính Vòng quay hàng tồn kho (Inventory Turnover)
+    inventory_turnover = {}
+    for y in years:
+        # Vòng quay hàng tồn kho = Giá vốn hàng bán / Hàng tồn kho bình quân
+        inventory_turnover[y] = safe_div(cost_of_goods_sold[y], avg_inventory[y])
+        
+    # Tính Thời gian tồn kho (Days Inventory Outstanding - DIO)
+    inventory_days = {}
+    for y in years:
+        # Thời gian tồn kho = 365 / Vòng quay hàng tồn kho
+        # Công thức này áp dụng cho giá trị Vòng quay Hàng tồn kho tại kỳ T (Y1, Y2, Y3)
+        # DIO thường được tính dựa trên Giá vốn hàng bán và HTK bình quân trong kỳ đó.
+        inventory_days[y] = safe_div(365, inventory_turnover[y])
+
+
+    # Tạo DataFrame cho các chỉ số mới
+    inventory_data = {
+        'Chỉ tiêu': [
+            'Hàng tồn kho bình quân', 
+            'Vòng quay hàng tồn kho (Lần)',
+            'Thời gian tồn kho (Ngày)'
+        ],
+        'Năm 1': [
+            avg_inventory['Năm 1'], 
+            inventory_turnover['Năm 1'],
+            inventory_days['Năm 1']
+        ],
+        'Năm 2': [
+            avg_inventory['Năm 2'], 
+            inventory_turnover['Năm 2'],
+            inventory_days['Năm 2']
+        ],
+        'Năm 3': [
+            avg_inventory['Năm 3'], 
+            inventory_turnover['Năm 3'],
+            inventory_days['Năm 3']
+        ]
+    }
+    df_inventory_ratios = pd.DataFrame(inventory_data)
+    
+    # Tính cột so sánh cho các chỉ số hoạt động (Y2 vs Y1)
+    # Vòng quay và DIO là các chỉ số hoạt động nên có thể thêm so sánh
+    df_inventory_ratios['S.S Tuyệt đối (Y2 vs Y1)'] = df_inventory_ratios['Năm 2'] - df_inventory_ratios['Năm 1']
+    
+    # -----------------------------------------------------------------
+    # [V24] PHẦN 5: TÍNH CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG (Cập nhật 2 chỉ số)
     # -----------------------------------------------------------------
     
     # --- HÀM HỖ TRỢ TÌM GIÁ TRỊ CỦA CHỈ TIÊU ---
@@ -235,12 +302,7 @@ def process_financial_data(df_balance_sheet, df_income_statement):
 
     years = ['Năm 1', 'Năm 2', 'Năm 3']
     
-    # Lấy các giá trị cần thiết
-    data = {}
-    data['TSNH'] = {y: get_value(df_bs, 'Tài sản ngắn hạn|TS ngắn hạn', y) for y in years}
-    data['NO_NGAN_HAN'] = {y: get_value(df_bs, 'Nợ ngắn hạn', y) for y in years} 
-    data['HTK'] = {y: get_value(df_bs, 'Hàng tồn kho|HTK', y) for y in years} # Bổ sung HTK
-    
+    # Lấy các giá trị cần thiết (đã có)
     
     # Tính toán chỉ số
     ratios_data = {
@@ -267,8 +329,39 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     # Tính cột so sánh (So sánh Y2 vs Y1)
     df_financial_ratios['S.S Tuyệt đối (Y2 vs Y1)'] = df_financial_ratios['Năm 2'] - df_financial_ratios['Năm 1']
     
+    # --- HỢP NHẤT CÁC CHỈ SỐ HOẠT ĐỘNG VÀ CÂN ĐỐI TẠI MỘT DF ---
+    # Thêm các chỉ số mới vào df_financial_ratios để tiện quản lý
+    
+    # Thêm chỉ số tồn kho vào df_financial_ratios (dòng cuối cùng)
+    df_inventory_final = df_inventory_ratios[
+        (df_inventory_ratios['Chỉ tiêu'] == 'Vòng quay hàng tồn kho (Lần)') | 
+        (df_inventory_ratios['Chỉ tiêu'] == 'Thời gian tồn kho (Ngày)')
+    ].copy()
+    
+    # Đổi tên cột so sánh cho phù hợp với các chỉ số khác
+    df_inventory_final = df_inventory_final.rename(columns={
+        'S.S Tuyệt đối (Y2 vs Y1)': 'S.S Tuyệt đối (Y2 vs Y1)_Inv',
+        'Năm 1': 'Năm 1_Inv', 'Năm 2': 'Năm 2_Inv', 'Năm 3': 'Năm 3_Inv'
+    })
+    
+    # Chuẩn bị dữ liệu để merge
+    df_liquidity = df_financial_ratios.copy()
+    df_liquidity['Năm 1_Inv'] = np.nan
+    df_liquidity['Năm 2_Inv'] = np.nan
+    df_liquidity['Năm 3_Inv'] = np.nan
+    df_liquidity['S.S Tuyệt đối (Y2 vs Y1)_Inv'] = np.nan
+    
+    # Merge (dùng index của chỉ tiêu thanh toán làm cơ sở)
+    # Lưu ý: Cách merge này đơn giản hóa, chỉ thêm các chỉ số hoạt động vào cuối danh sách chỉ số thanh toán
+    df_financial_ratios_processed = pd.concat([df_liquidity, df_inventory_final], ignore_index=True)
+    
+    # Chuẩn hóa lại tên cột so sánh (để hiển thị chỉ cần quan tâm đến cột so sánh đầu tiên)
+    df_financial_ratios_processed = df_financial_ratios_processed.rename(columns={
+        'S.S Tuyệt đối (Y2 vs Y1)_Inv': 'S.S Tuyệt đối (Y2 vs Y1)_Inv_Placeholder' # Đổi tên cột so sánh cho các chỉ số hoạt động để không bị ghi đè
+    })
+    
     # [V24] TRẢ VỀ DF MỚI: (df_bs, df_is, df_ratios, df_financial_ratios)
-    return df_bs, df_is, df_ratios, df_financial_ratios
+    return df_bs, df_is, df_ratios, df_financial_ratios_processed
 
 # --- Hàm gọi API Gemini cho Phân tích Báo cáo (Single-shot analysis) ---
 def get_ai_analysis(data_for_ai, api_key):
@@ -280,7 +373,7 @@ def get_ai_analysis(data_for_ai, api_key):
         system_instruction_text = (
             "Bạn là một chuyên gia phân tích tài chính chuyên nghiệp. "
             "Dựa trên dữ liệu đã cung cấp, hãy đưa ra một nhận xét khách quan, ngắn gọn (khoảng 3-4 đoạn) về tình hình tài chính của doanh nghiệp. "
-            "Đánh giá tập trung vào tốc độ tăng trưởng qua các chu kỳ, thay đổi cơ cấu tài sản và **tỷ trọng chi phí/doanh thu thuần** trong 3 năm/kỳ."
+            "Đánh giá tập trung vào tốc độ tăng trưởng qua các chu kỳ, thay đổi cơ cấu tài sản và **tỷ trọng chi phí/doanh thu thuần** trong 3 năm/kỳ. **Đặc biệt chú ý đến hiệu quả sử dụng hàng tồn kho (Vòng quay và Thời gian tồn kho)**."
         )
         
         user_prompt = f"""
@@ -311,11 +404,11 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
         model_name = 'gemini-2.5-flash'
         
         # 1. Định nghĩa System Instruction
-        # [V24] Cập nhật System Instruction: Thêm tham chiếu đến 2 Chỉ số Thanh toán
+        # [V25 - MỚI] Cập nhật System Instruction: Thêm tham chiếu đến Vòng quay và Thời gian tồn kho
         system_instruction_text = (
             "Bạn là một trợ lý phân tích tài chính thông minh (Financial Analyst Assistant). "
             "Bạn phải trả lời các câu hỏi của người dùng dựa trên dữ liệu tài chính đã xử lý sau. "
-            "Dữ liệu này bao gồm tốc độ tăng trưởng, so sánh tuyệt đối/tương đối, tỷ trọng cơ cấu, tỷ trọng chi phí/doanh thu thuần, và **các chỉ số thanh toán ngắn hạn và nhanh** trong 3 kỳ Báo cáo tài chính. "
+            "Dữ liệu này bao gồm tốc độ tăng trưởng, so sánh tuyệt đối/tương đối, tỷ trọng cơ cấu, tỷ trọng chi phí/doanh thu thuần, **các chỉ số thanh toán ngắn hạn và nhanh**, và **hiệu quả hàng tồn kho (Vòng quay và Thời gian tồn kho)** trong 3 kỳ Báo cáo tài chính. "
             "Nếu người dùng hỏi một câu không liên quan đến dữ liệu tài chính hoặc phân tích, hãy lịch sự từ chối trả lời. "
             "Dữ liệu tài chính đã xử lý (được trình bày dưới dạng Markdown để bạn dễ hiểu): \n\n" + context_data
         )
@@ -442,9 +535,9 @@ if uploaded_file is not None:
                     df_raw_is.columns = new_header
                     col_to_rename = df_raw_is.columns[0]
                     if pd.isna(col_to_rename) or str(col_to_rename).strip() == '':
-                         df_raw_is.rename(columns={col_to_rename: 'Chỉ tiêu'}, inplace=True)
+                          df_raw_is.rename(columns={col_to_rename: 'Chỉ tiêu'}, inplace=True)
                     else:
-                        df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
+                          df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
         
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ---
         
@@ -457,7 +550,7 @@ if uploaded_file is not None:
             df_raw_is.columns = [str(col) for col in df_raw_is.columns]
         
         
-        # 2. Xác định cột năm/kỳ gần nhất ('Năm 3'), 'Năm 2', 'Năm 1' (Logic này không đổi)
+        # 2. Xác định cột năm/kỳ gần nhất ('Năm 3', 'Năm 2', 'Năm 1')
         value_cols_unique = {} 
         col_name_map = {} 
         for col in df_raw_bs.columns:
@@ -469,13 +562,13 @@ if uploaded_file is not None:
             normalized_name = normalize_date_col(col_str)
             
             if len(normalized_name) >= 10 and normalized_name[4] == '-' and normalized_name[7] == '-' and normalized_name[:4].isdigit():
-                 if normalized_name not in value_cols_unique:
-                    value_cols_unique[normalized_name] = col 
-                    col_name_map[normalized_name] = col_str 
+                  if normalized_name not in value_cols_unique:
+                     value_cols_unique[normalized_name] = col 
+                     col_name_map[normalized_name] = col_str 
             elif normalized_name.isdigit() and len(normalized_name) == 4 and normalized_name.startswith('20'):
                  if normalized_name not in value_cols_unique:
-                    value_cols_unique[normalized_name] = col
-                    col_name_map[normalized_name] = col_str 
+                     value_cols_unique[normalized_name] = col
+                     col_name_map[normalized_name] = col_str 
 
         normalized_names = list(value_cols_unique.keys())
         
@@ -546,11 +639,11 @@ if uploaded_file is not None:
                 df_is_final = df_is_final.dropna(subset=['Chỉ tiêu'])
                 
             except KeyError as ke:
-                st.warning(f"Các cột năm trong phần KQKD không khớp với BĐKT. Bỏ qua phân tích KQKD. Lỗi chi tiết: Cột {ke} bị thiếu.")
-                df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
-            except Exception:
+                 st.warning(f"Các cột năm trong phần KQKD không khớp với BĐKT. Bỏ qua phân tích KQKD. Lỗi chi tiết: Cột {ke} bị thiếu.")
                  df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
-                 
+            except Exception:
+                  df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+                
         else:
             st.info("Không tìm thấy dữ liệu KQKD để phân tích.")
             df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
@@ -565,7 +658,15 @@ if uploaded_file is not None:
             if df.empty:
                 return df
             # Chỉ giữ lại các dòng mà tổng giá trị tuyệt đối của 3 cột năm KHÔNG bằng 0
-            mask = (df['Năm 1'].abs() + df['Năm 2'].abs() + df['Năm 3'].abs()) != 0
+            # Cần kiểm tra nhiều cột số nếu df có nhiều cột số
+            numeric_cols = ['Năm 1', 'Năm 2', 'Năm 3']
+            # Lọc các cột số có trong df
+            cols_to_sum = [col for col in numeric_cols if col in df.columns]
+            
+            if not cols_to_sum:
+                return df # Không có cột số thì không lọc
+                
+            mask = (df[cols_to_sum].abs().sum(axis=1)) != 0
             return df[mask].copy()
 
         df_bs_processed = filter_zero_rows(df_bs_processed)
@@ -603,8 +704,8 @@ if uploaded_file is not None:
             
             # 1. TẠO DATAFRAME BẢNG CĐKT TĂNG TRƯỞNG (GHÉP CỘT)
             df_growth = df_bs_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 
-                                    'Delta (Y2 vs Y1)', 'Growth (Y2 vs Y1)', 
-                                    'Delta (Y3 vs Y2)', 'Growth (Y3 vs Y2)']].copy()
+                                         'Delta (Y2 vs Y1)', 'Growth (Y2 vs Y1)', 
+                                         'Delta (Y3 vs Y2)', 'Growth (Y3 vs Y2)']].copy()
             
             df_growth.columns = [
                 'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, 
@@ -616,7 +717,7 @@ if uploaded_file is not None:
             
             # 2. TẠO DATAFRAME BẢNG CĐKT CƠ CẤU
             df_structure = df_bs_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 
-                                         'Tỷ trọng Năm 1 (%)', 'Tỷ trọng Năm 2 (%)', 'Tỷ trọng Năm 3 (%)']].copy()
+                                            'Tỷ trọng Năm 1 (%)', 'Tỷ trọng Năm 2 (%)', 'Tỷ trọng Năm 3 (%)']].copy()
             
             df_structure.columns = [
                 'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, 
@@ -649,7 +750,7 @@ if uploaded_file is not None:
                     f'Tỷ trọng {Y2_Name} (%)': format_vn_percentage,
                     f'Tỷ trọng {Y3_Name} (%)': format_vn_percentage
                 }), use_container_width=True, hide_index=True)
-            
+                
             # -----------------------------------------------------
             # CHỨC NĂNG 4: BÁO CÁO KẾT QUẢ HOẠT ĐỘNG KINH DOANH
             # -----------------------------------------------------
@@ -657,9 +758,9 @@ if uploaded_file is not None:
 
             if not df_is_processed.empty:
                 df_is_display = df_is_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 
-                                                'S.S Tuyệt đối (Y2 vs Y1)', 'S.S Tương đối (%) (Y2 vs Y1)',
-                                                'S.S Tuyệt đối (Y3 vs Y2)', 'S.S Tương đối (%) (Y3 vs Y2)'
-                                                ]].copy()
+                                                 'S.S Tuyệt đối (Y2 vs Y1)', 'S.S Tương đối (%) (Y2 vs Y1)',
+                                                 'S.S Tuyệt đối (Y3 vs Y2)', 'S.S Tương đối (%) (Y3 vs Y2)'
+                                                 ]].copy()
                 
                 df_is_display.columns = [
                     'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, 
@@ -680,7 +781,6 @@ if uploaded_file is not None:
                     f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})': format_vn_delta_currency, 
                     f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': format_vn_percentage 
                 }), use_container_width=True, hide_index=True)
-
 
                 is_context = df_is_processed.to_markdown(index=False)
             else:
@@ -717,16 +817,41 @@ if uploaded_file is not None:
                 ratios_context = "Không tìm thấy dữ liệu Tỷ trọng Chi phí/Doanh thu thuần."
             
             # -----------------------------------------------------
-            # [V24] CHỨC NĂNG 6: CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG
+            # [V25 - MỚI] CHỨC NĂNG 6: VÒNG QUAY VÀ THỜI GIAN TỒN KHO
             # -----------------------------------------------------
-            st.subheader("6. Các Chỉ số Tài chính Quan trọng")
+            st.subheader("6. Hiệu quả Hoạt động: Vòng quay và Thời gian Tồn kho")
+            
+            if not df_inventory_ratios.empty:
+                df_inv_display = df_inventory_ratios.copy()
+                df_inv_display.columns = [
+                    'Chỉ tiêu', 
+                    Y1_Name, 
+                    Y2_Name, 
+                    Y3_Name, 
+                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})'
+                ]
+                
+                st.dataframe(df_inv_display.style.apply(highlight_financial_items, axis=1).format({
+                    Y1_Name: format_vn_delta_ratio, # Vòng quay: 2 thập phân (giống delta ratio)
+                    Y2_Name: format_vn_delta_ratio, # Thời gian tồn kho: làm tròn gần nhất (giống delta ratio)
+                    Y3_Name: format_vn_delta_ratio,
+                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio # Delta ngày/lần
+                }), use_container_width=True, hide_index=True)
+                
+                inv_context = df_inventory_ratios.to_markdown(index=False)
+            else:
+                st.info("Không thể tính Vòng quay và Thời gian tồn kho do thiếu dữ liệu Giá vốn hàng bán hoặc Hàng tồn kho.")
+                inv_context = "Không tìm thấy dữ liệu Vòng quay/Thời gian tồn kho."
+            
+            # -----------------------------------------------------
+            # [V24] CHỨC NĂNG 7: CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG (Thanh toán)
+            # -----------------------------------------------------
+            st.subheader("7. Các Chỉ số Tài chính Quan trọng (Thanh toán)")
 
             if not df_financial_ratios_processed.empty:
-                df_ratios_final_display = df_financial_ratios_processed.copy()
-                
-                # Chỉ giữ lại các cột theo yêu cầu: Chỉ tiêu, Năm 1, Năm 2, So sánh Y2 vs Y1
-                cols_to_display = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'S.S Tuyệt đối (Y2 vs Y1)']
-                df_ratios_final_display = df_ratios_final_display[cols_to_display]
+                df_ratios_final_display = df_financial_ratios_processed[
+                    ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'S.S Tuyệt đối (Y2 vs Y1)']
+                ].copy()
                 
                 df_ratios_final_display.columns = [
                     'Chỉ tiêu', 
@@ -752,7 +877,7 @@ if uploaded_file is not None:
             # -----------------------------------------------------
             # [V18] CẬP NHẬT CONTEXT CHO CHATBOT 
             # -----------------------------------------------------
-            # [V24] Cập nhật Context: Thêm Chỉ số Tài chính Quan trọng
+            # [V25 - MỚI] Cập nhật Context: Thêm Hiệu quả Hàng tồn kho
             data_for_chat_context = f"""
             **BẢNG CÂN ĐỐI KẾ TOÁN (Balance Sheet Analysis):**
             {df_bs_processed.to_markdown(index=False)}
@@ -763,18 +888,21 @@ if uploaded_file is not None:
             **TỶ TRỌNG CHI PHÍ/DOANH THU THUẦN (%):**
             {ratios_context}
             
-            **CHỈ SỐ TÀI CHÍNH QUAN TRỌNG:**
+            **HIỆU QUẢ HOẠT ĐỘNG (HÀNG TỒN KHO):**
+            {inv_context}
+            
+            **CHỈ SỐ TÀI CHÍNH THANH TOÁN QUAN TRỌNG:**
             {ratios_final_context}
             """
             st.session_state.data_for_chat = data_for_chat_context
             
             # Cập nhật tin nhắn chào mừng
             if st.session_state.messages[0]["content"].startswith("Xin chào!") or st.session_state.messages[0]["content"].startswith("Phân tích"):
-                 # [V24] Cập nhật tin nhắn chào mừng: Thêm tham chiếu đến chỉ số thanh toán
-                 st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí và **các chỉ số thanh toán** của báo cáo này."
+                  # [V25 - MỚI] Cập nhật tin nhắn chào mừng: Thêm tham chiếu đến Vòng quay/Thời gian tồn kho
+                   st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí, **các chỉ số thanh toán** và **hiệu quả sử dụng hàng tồn kho** của báo cáo này."
 
             # -----------------------------------------------------
-            # MỤC 7 ĐÃ ĐƯỢC ĐỔI THÀNH CHAT
+            # MỤC 8 ĐÃ ĐƯỢC ĐỔI THÀNH CHAT
             # -----------------------------------------------------
 
     except ValueError as ve:
@@ -790,8 +918,8 @@ else:
     st.info("Vui lòng tải lên file Excel (Sheet 1 chứa BĐKT và KQKD) để bắt đầu phân tích.")
     st.session_state.data_for_chat = None # Đảm bảo context được reset khi chưa có file
 
-# --- Chức năng 7: Khung Chatbot tương tác ---
-st.subheader("7. Trò chuyện và Hỏi đáp (Gemini AI)") 
+# --- Chức năng 8: Khung Chatbot tương tác ---
+st.subheader("8. Trò chuyện và Hỏi đáp (Gemini AI)") 
 if st.session_state.data_for_chat is None:
     st.info("Vui lòng tải lên và xử lý báo cáo tài chính trước khi bắt đầu trò chuyện với AI.")
 else:
