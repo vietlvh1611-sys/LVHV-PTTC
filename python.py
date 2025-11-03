@@ -52,6 +52,39 @@ def format_vn_delta_ratio(val):
     return "{:+.2f}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
 # === KẾT THÚC ĐỊNH NGHĨA FORMATTERS ===
 
+# === [V16] ĐỊNH NGHĨA HÀM STYLING CHO CÁC CHỈ TIÊU CHÍNH/PHỤ ===
+def highlight_financial_items(row):
+    """Áp dụng in đậm cho mục chính (A, I, TỔNG CỘNG) và in nghiêng cho mục chi tiết (Nguyên giá, Hao mòn)."""
+    styles = [''] * len(row)
+    item = str(row['Chỉ tiêu']).strip()
+    
+    # 1. In đậm cho mục chính và tổng cộng
+    # Kiểm tra: Bắt đầu bằng chữ cái (A, B, C...) + dấu chấm, hoặc Bắt đầu bằng số La Mã (I, II, III...) + dấu chấm, hoặc chứa TỔNG CỘNG.
+    is_major_section = (
+        item.startswith(('A.', 'B.', 'C.')) or 
+        item.startswith(('I.', 'II.', 'III.', 'IV.', 'V.', 'VI.', 'VII.', 'VIII.', 'IX.', 'X.')) or
+        'TỔNG CỘNG' in item.upper() or
+        'TỔNG CỘNG TÀI SẢN' in item.upper() or
+        'TỔNG CỘNG NGUỒN VỐN' in item.upper() or
+        'NỢ PHẢI TRẢ' in item.upper() or
+        'VỐN CHỦ SỞ HỮU' in item.upper()
+    )
+    
+    # 2. In nghiêng cho mục chi tiết TSCĐ
+    is_italic_item = (
+        'Nguyên giá' in item or 
+        'Giá trị hao mòn lũy kế' in item
+    )
+    
+    if is_major_section:
+        styles = ['font-weight: bold'] * len(row)
+    
+    elif is_italic_item:
+        styles = ['font-style: italic'] * len(row)
+        
+    return styles
+# === KẾT THÚC [V16] HÀM STYLING ===
+
 
 # --- Hàm tính toán chính (Sử dụng Caching để Tối ưu hiệu suất) ---
 @st.cache_data
@@ -506,7 +539,7 @@ if uploaded_file is not None:
             # Format và hiển thị tab 1
             with tab1:
                 st.markdown("##### Bảng phân tích Tốc độ Tăng trưởng & So sánh Tuyệt đối (Bảng CĐKT)")
-                st.dataframe(df_growth.style.format({
+                st.dataframe(df_growth.style.apply(highlight_financial_items, axis=1).format({
                     Y1_Name: format_vn_currency,
                     Y2_Name: format_vn_currency,
                     Y3_Name: format_vn_currency,
@@ -519,7 +552,7 @@ if uploaded_file is not None:
             # Format và hiển thị tab 2
             with tab2:
                 st.markdown("##### Bảng phân tích Tỷ trọng Cơ cấu Tài sản (%)")
-                st.dataframe(df_structure.style.format({
+                st.dataframe(df_structure.style.apply(highlight_financial_items, axis=1).format({
                     Y1_Name: format_vn_currency,
                     Y2_Name: format_vn_currency,
                     Y3_Name: format_vn_currency,
@@ -549,7 +582,7 @@ if uploaded_file is not None:
                 
                 st.markdown(f"##### Bảng so sánh Kết quả hoạt động kinh doanh ({Y2_Name} vs {Y1_Name} và {Y3_Name} vs {Y2_Name})")
                 
-                st.dataframe(df_is_display.style.format({
+                st.dataframe(df_is_display.style.apply(highlight_financial_items, axis=1).format({
                     Y1_Name: format_vn_currency,
                     Y2_Name: format_vn_currency,
                     Y3_Name: format_vn_currency,
@@ -582,7 +615,7 @@ if uploaded_file is not None:
                     f'So sánh Tương đối ({Y2_Name} vs {Y1_Name})'
                 ]
                 
-                st.dataframe(df_ratios_display.style.format({
+                st.dataframe(df_ratios_display.style.apply(highlight_financial_items, axis=1).format({
                     Y1_Name: format_vn_percentage,
                     Y2_Name: format_vn_percentage,
                     Y3_Name: format_vn_percentage,
