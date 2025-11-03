@@ -222,10 +222,31 @@ if uploaded_file is not None:
 
         if df_processed is not None:
             
-            # Lưu tên cột gốc (ngày tháng) để hiển thị
-            Y1_Name = str(col_nam_1)
-            Y2_Name = str(col_nam_2)
-            Y3_Name = str(col_nam_3)
+            # -----------------------------------------------------
+            # SỬA LỖI: LỌC BỎ PHẦN GIỜ VÀ CHUYỂN SANG ĐỊNH DẠNG DD/MM/YYYY
+            # -----------------------------------------------------
+            def format_col_name(col_name):
+                col_name = str(col_name)
+                # Loại bỏ phần giờ nếu có
+                if ' ' in col_name:
+                    col_name = col_name.split(' ')[0]
+                
+                # Chuyển từ YYYY-MM-DD sang DD/MM/YYYY
+                try:
+                    # Tách YYYY, MM, DD dựa trên dấu '-'
+                    parts = col_name.split('-')
+                    if len(parts) == 3:
+                        return f"{parts[2]}/{parts[1]}/{parts[0]}"
+                except Exception:
+                    # Nếu không phải định dạng YYYY-MM-DD (ví dụ: chỉ là '2023'), giữ nguyên
+                    pass
+
+                return col_name
+
+            Y1_Name = format_col_name(col_nam_1)
+            Y2_Name = format_col_name(col_nam_2)
+            Y3_Name = format_col_name(col_nam_3)
+            # -----------------------------------------------------
             
             # --- Chức năng 2 & 3: Hiển thị Kết quả theo Tabs ---
             st.subheader("2. Phân tích Tốc độ Tăng trưởng & 3. Phân tích Tỷ trọng Cơ cấu Tài sản")
