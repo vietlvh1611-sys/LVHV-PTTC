@@ -239,31 +239,35 @@ if uploaded_file is not None:
         
         # 4. Tách Bảng cân đối Kế toán (Balance Sheet) và Báo cáo Kết quả Kinh doanh (Income Statement)
         
-        # Tìm chỉ tiêu 'CHỈ TIÊU' trong cột đầu tiên (Chỉ tiêu)
-        income_statement_start_index = df_raw[df_raw['Chỉ tiêu'].str.contains('CHỈ TIÊU', case=False, na=False)].index
+        # TÌM KIẾM LINH HOẠT HƠN CHO BÁO CÁO KẾT QUẢ KINH DOANH
+        # Tìm dòng đầu tiên chứa một trong các chỉ tiêu chính của KQKD: 'Doanh thu', 'Lợi nhuận', 'CHỈ TIÊU'
+        is_keywords = ['Doanh thu', 'Lợi nhuận', 'CHỈ TIÊU']
+        income_statement_start_index = df_raw[
+            df_raw['Chỉ tiêu'].astype(str).str.contains('|'.join(is_keywords), case=False, na=False)
+        ].index
         
         if income_statement_start_index.empty:
-            st.warning("Không tìm thấy dòng 'CHỈ TIÊU' để phân tách Bảng Cân đối Kế toán và Kết quả Kinh doanh. Chỉ phân tích Bảng CĐKT.")
+            st.warning("Không tìm thấy dòng 'Doanh thu', 'Lợi nhuận' hoặc 'CHỈ TIÊU' để phân tách Bảng Cân đối Kế toán và Kết quả Kinh doanh. Chỉ phân tích Bảng CĐKT.")
             # Xử lý toàn bộ là Bảng CĐKT
             df_balance_sheet_raw = df_raw.copy()
             df_income_statement_raw = pd.DataFrame(columns=['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]) # DF rỗng
             
         else:
-            # Lấy index dòng bắt đầu phần Kết quả Kinh doanh
+            # Lấy index dòng bắt đầu phần Kết quả Kinh doanh (dòng đầu tiên chứa từ khóa)
             is_start_idx = income_statement_start_index[0]
             
-            # Bảng Cân đối Kế toán (từ đầu đến dòng CHỈ TIÊU)
+            # Bảng Cân đối Kế toán (từ đầu đến ngay trước dòng chứa từ khóa KQKD)
             df_balance_sheet_raw = df_raw.loc[:is_start_idx-1].copy()
             
-            # Báo cáo Kết quả Kinh doanh (từ dòng sau CHỈ TIÊU đến hết)
-            # Dòng CHỈ TIÊU thường chỉ là tiêu đề, nên ta bắt đầu từ dòng kế tiếp.
-            df_income_statement_raw = df_raw.loc[is_start_idx+1:].copy()
+            # Báo cáo Kết quả Kinh doanh (từ dòng chứa từ khóa đến hết)
+            df_income_statement_raw = df_raw.loc[is_start_idx:].copy()
             
             # **LƯU Ý: Loại bỏ hàng phụ thứ 2 của KQKD nếu có (như hàng 'SS (+/-)')**
             if not df_income_statement_raw.empty and len(df_income_statement_raw) > 0:
                 # Nếu hàng đầu tiên của KQKD có vẻ là hàng phụ (chứa NaN nhiều), ta xóa nó đi
-                if df_income_statement_raw.iloc[0].isnull().sum() > 2:
-                    df_income_statement_raw = df_income_statement_raw.drop(df_income_statement_raw.index[0])
+                if df_income_statement_raw.iloc[0].astype(str).str.contains('CHỈ TIÊU', case=False, na=False).any():
+                     # Nếu dòng đầu tiên là tiêu đề CHỈ TIÊU, ta bắt đầu từ dòng kế tiếp (is_start_idx+1)
+                     df_income_statement_raw = df_raw.loc[is_start_idx+1:].copy()
 
 
         # 5. Tạo DataFrame Bảng CĐKT (4 cột cần thiết)
