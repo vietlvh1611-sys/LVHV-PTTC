@@ -1,6 +1,4 @@
-
-Trò chuyện với Gemini
-Thêm cột 31/12/2022 vào Mục 2. Sửa lại đoạn python sau: import streamlit as st
+import streamlit as st
 
 import pandas as pd
 
