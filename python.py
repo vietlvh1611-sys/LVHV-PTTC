@@ -369,15 +369,23 @@ if uploaded_file is not None:
         # Bảng CĐKT
         if not df_raw_bs.empty and len(df_raw_bs) > 1:
             df_raw_bs = df_raw_bs.drop(df_raw_bs.index[0])
-        # KQKD
-        # Lọc hàng đầu tiên của KQKD (SS), nếu có
-        if not df_raw_is.empty and len(df_raw_is) > 1:
-            # === [V7] KIỂM TRA TÊN CỘT CÓ CHỨA 'SS' (So sánh) TRƯỚC KHI DROP ===
-            # Nếu tên cột đầu tiên trong df_raw_is là 'CHỈ TIÊU' thì hàng đầu tiên là data
-            # Nếu tên cột đầu tiên không phải 'CHỈ TIÊU' thì hàng đầu tiên có thể là hàng SS (đã bị bỏ trong V6)
-            # Dựa trên file thô, sau khi gán header, hàng đầu tiên của KQKD thường là data, nhưng ta vẫn giữ check này
-            pass # Vẫn giữ logic cũ (df_raw_is.drop(df_raw_is.index[0]))
         
+        # === [V8] LOẠI BỎ CÁC HÀNG TRỐNG/NAN TRONG CỘT 'CHỈ TIÊU' CỦA KQKD ===
+        if not df_raw_is.empty:
+            # Loại bỏ các hàng mà cột 'Chỉ tiêu' là NaN hoặc rỗng sau khi đã gán header
+            df_raw_is['Chỉ tiêu'] = df_raw_is['Chỉ tiêu'].astype(str).str.strip()
+            df_raw_is = df_raw_is[df_raw_is['Chỉ tiêu'].str.len() > 0].copy()
+            # Đôi khi có dòng chỉ là "," hoặc "-", ta cũng loại bỏ
+            df_raw_is = df_raw_is[~df_raw_is['Chỉ tiêu'].isin(['-', ','])].copy()
+            
+            # Cần drop thêm một hàng nếu nó vẫn là hàng so sánh trống
+            if not df_raw_is.empty and len(df_raw_is) > 1:
+                # Kiểm tra hàng đầu tiên có phải là hàng chú thích trống không (dòng SS)
+                first_row_text = df_raw_is.iloc[0]['Chỉ tiêu']
+                if first_row_text is None or str(first_row_text).strip() == '':
+                    df_raw_is = df_raw_is.drop(df_raw_is.index[0])
+        # === KẾT THÚC [V8] ===
+
         
         # 4. Tạo DataFrame Bảng CĐKT và KQKD đã lọc (chỉ giữ lại 4 cột)
         
