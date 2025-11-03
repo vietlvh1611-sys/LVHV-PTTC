@@ -209,6 +209,10 @@ if uploaded_file is not None:
         
         # TÌM KIẾM CỘT NGÀY THÁNG LINH HOẠT TRONG BẢNG CĐKT (Sheet 1)
         value_cols_unique = {} # Dùng dictionary để đảm bảo key (giá trị ngày) là duy nhất
+        
+        # LƯU Ý QUAN TRỌNG: Cột gốc sẽ được lưu trữ để tránh lỗi Key Mismatch
+        col_name_map = {} 
+
         for col in df_raw_bs.columns:
             col_str = str(col)
             
@@ -226,25 +230,27 @@ if uploaded_file is not None:
                  # Nếu tên ngày tháng (normalized_name) chưa có trong dict, thêm cột gốc (col) vào
                  if normalized_name not in value_cols_unique:
                     value_cols_unique[normalized_name] = col
+                    col_name_map[normalized_name] = col_str # LƯU TÊN CỘT GỐC (KÈM GIỜ HOẶC DATETIME OBJECT)
             # Hoặc tìm các cột có tên là năm đơn thuần (VD: 2023)
             elif normalized_name.isdigit() and len(normalized_name) == 4 and normalized_name.startswith('20'):
                  if normalized_name not in value_cols_unique:
                     value_cols_unique[normalized_name] = col
+                    col_name_map[normalized_name] = col_str # LƯU TÊN CỘT GỐC (STRING)
 
-        # Lấy danh sách các cột gốc không trùng lặp (Value của dictionary)
-        value_cols = list(value_cols_unique.values())
+        # Lấy danh sách các tên chuẩn hóa không trùng lặp (Key của dictionary)
+        normalized_names = list(value_cols_unique.keys())
         
-        if len(value_cols) < 3: # Yêu cầu 3 năm để tính toán 2 chu kỳ
-            st.warning(f"Chỉ tìm thấy {len(value_cols)} cột năm trong Sheet 1 (Bảng CĐKT). Ứng dụng cần ít nhất 3 năm/kỳ để so sánh.")
+        if len(normalized_names) < 3: # Yêu cầu 3 năm để tính toán 2 chu kỳ
+            st.warning(f"Chỉ tìm thấy {len(normalized_names)} cột năm trong Sheet 1 (Bảng CĐKT). Ứng dụng cần ít nhất 3 năm/kỳ để so sánh.")
             st.stop()
             
-        # Chọn 3 cột năm gần nhất (Sắp xếp theo tên cột/ngày tháng, mới nhất (Y3) lên đầu)
-        value_cols.sort(key=lambda x: str(x), reverse=True)
+        # Chọn 3 tên chuẩn hóa gần nhất (Sắp xếp theo tên chuẩn hóa/ngày tháng, mới nhất lên đầu)
+        normalized_names.sort(key=lambda x: str(x), reverse=True)
         
-        # CHUYỂN TÊN CỘT GỐC SANG CHUỖI ĐỂ TRÁNH LỖI KEY MISMATCH KHI LỌC DF
-        col_nam_3 = str(value_cols[0]) # Newest (Năm 3)
-        col_nam_2 = str(value_cols[1]) # Middle (Năm 2)
-        col_nam_1 = str(value_cols[2]) # Oldest (Năm 1)
+        # LẤY TÊN CỘT GỐC TỪ MAP ĐỂ DÙNG LỌC DF
+        col_nam_3 = col_name_map[normalized_names[0]] # Newest (Năm 3)
+        col_nam_2 = col_name_map[normalized_names[1]] # Middle (Năm 2)
+        col_nam_1 = col_name_map[normalized_names[2]] # Oldest (Năm 1)
         
         
         # 3. Lọc bỏ hàng đầu tiên chứa các chỉ số so sánh (SS) không cần thiết
@@ -258,7 +264,7 @@ if uploaded_file is not None:
         
         # 4. Tạo DataFrame Bảng CĐKT và KQKD đã lọc (chỉ giữ lại 4 cột)
         
-        # Tên cột gốc cần được lọc
+        # Tên cột gốc cần được lọc (Sử dụng tên cột GỐC từ map)
         cols_to_keep = ['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]
 
         # Bảng CĐKT
@@ -268,10 +274,25 @@ if uploaded_file is not None:
 
         # Báo cáo KQKD
         if not df_raw_is.empty:
-            # Lấy 3 cột năm đã xác định ở Bảng CĐKT
-            df_is_final = df_raw_is[cols_to_keep].copy() # SỬA LỖI KEY ERROR TẠI ĐÂY
-            df_is_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
-            df_is_final = df_is_final.dropna(subset=['Chỉ tiêu'])
+            # Lấy 3 cột năm đã xác định ở Bảng CĐKT (SỬ DỤNG CỘT GỐC LÀM CHO CHẮC)
+            # Nếu tên cột trong Sheet 2 khác hoàn toàn tên cột trong Sheet 1, thì phải bỏ qua
+            
+            # Kiểm tra xem các cột gốc có tồn tại trong df_raw_is không
+            valid_cols_is = [col for col in cols_to_keep if col in df_raw_is.columns]
+            
+            if len(valid_cols_is) == 4: # Phải có đủ 4 cột (Chỉ tiêu + 3 năm)
+                df_is_final = df_raw_is[valid_cols_is].copy() 
+                # Đảm bảo thứ tự cột đúng (Chỉ tiêu, N1, N2, N3)
+                df_is_final = df_is_final.rename(columns={
+                    col_nam_1: 'Năm 1', 
+                    col_nam_2: 'Năm 2', 
+                    col_nam_3: 'Năm 3'
+                })
+                df_is_final = df_is_final[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']].copy()
+                df_is_final = df_is_final.dropna(subset=['Chỉ tiêu'])
+            else:
+                st.warning("Các cột năm trong Sheet 2 (KQKD) không khớp với Sheet 1 (Bảng CĐKT). Bỏ qua phân tích KQKD.")
+                df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
         else:
             df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
 
@@ -285,7 +306,8 @@ if uploaded_file is not None:
             # CHUẨN HÓA TÊN CỘT ĐỂ HIỂN THỊ (DD/MM/YYYY)
             # -----------------------------------------------------
             def format_col_name(col_name):
-                col_name = str(col_name)
+                # Tên cột gốc đã là chuỗi (col_nam_X)
+                col_name = str(col_name) 
                 # Loại bỏ phần giờ nếu có
                 if ' ' in col_name:
                     col_name = col_name.split(' ')[0]
