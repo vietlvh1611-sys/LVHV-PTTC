@@ -20,13 +20,13 @@ st.set_page_config(
 
 st.title("Ứng dụng Phân Tích Báo cáo Tài chính 📊")
 
-# === [V14] ĐỊNH NGHĨA CÁC HÀM ĐỊNH DẠNG TÙY CHỈNH THEO CHUẨN VIỆT NAM (., phân cách) ===
+# === [V17] ĐỊNH NGHĨA CÁC HÀM ĐỊNH DẠNG TÙY CHỈNH THEO CHUẨN VIỆT NAM (., phân cách) ===
 def format_vn_currency(val):
     # Định dạng tiền tệ (hàng đơn vị), dot là ngàn, comma là thập phân. Ẩn 0.
     if pd.isna(val) or (val == 0): 
         return "" 
     val = round(val)
-    # [FIX] Đổi từ .0f sang d để định dạng số nguyên sau khi round()
+    # Định dạng số nguyên
     return "{:,d}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
 
 def format_vn_percentage(val):
@@ -37,19 +37,34 @@ def format_vn_percentage(val):
     return "{:,.1f}%".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
 
 def format_vn_delta_currency(val):
-    # Định dạng So sánh Tuyệt đối (có dấu +/-), hàng đơn vị. Giữ 0 để theo dõi thay đổi.
+    # [V17] SỬA: Loại bỏ dấu + khi số dương. Chỉ hiển thị dấu - khi số âm.
     if pd.isna(val):
         return ""
     val = round(val)
-    # [FIX] Đổi từ +, .0f sang +,d để định dạng số nguyên có dấu
-    return "{:+,d}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
+    
+    # Định dạng số nguyên: Chỉ dùng '-' khi âm, không dùng '+' khi dương.
+    if val < 0:
+        # Sử dụng abs() để định dạng số dương, sau đó thêm dấu '-' thủ công
+        formatted_val = "-{:,d}".format(abs(val))
+    else:
+        formatted_val = "{:,d}".format(val)
+        
+    return formatted_val.replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
 
 def format_vn_delta_ratio(val):
-    # Định dạng So sánh Tỷ lệ (có dấu +/-), 2 chữ số thập phân (cho độ chính xác khi so sánh). Giữ 0.
+    # [V17] SỬA: Loại bỏ dấu + khi số dương. Giữ 2 chữ số thập phân (cho độ chính xác so sánh).
     if pd.isna(val):
         return ""
     val = round(val, 2)
-    return "{:+.2f}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
+    
+    # Định dạng số thập phân: Chỉ dùng '-' khi âm, không dùng '+' khi dương.
+    if val < 0:
+        # Sử dụng abs() để định dạng số dương, sau đó thêm dấu '-' thủ công
+        formatted_val = "-{:.2f}".format(abs(val))
+    else:
+        formatted_val = "{:.2f}".format(val)
+        
+    return formatted_val.replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
 # === KẾT THÚC ĐỊNH NGHĨA FORMATTERS ===
 
 # === [V16] ĐỊNH NGHĨA HÀM STYLING CHO CÁC CHỈ TIÊU CHÍNH/PHỤ ===
