@@ -20,6 +20,37 @@ st.set_page_config(
 
 st.title("Ứng dụng Phân Tích Báo cáo Tài chính 📊")
 
+# === [V14] ĐỊNH NGHĨA CÁC HÀM ĐỊNH DẠNG TÙY CHỈNH THEO CHUẨN VIỆT NAM (., phân cách) ===
+def format_vn_currency(val):
+    # Định dạng tiền tệ (hàng đơn vị), dot là ngàn, comma là thập phân. Ẩn 0.
+    if pd.isna(val) or (val == 0): 
+        return "" 
+    val = round(val)
+    return "{:,.0f}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
+
+def format_vn_percentage(val):
+    # Định dạng tỷ lệ (1 chữ số thập phân), dot là ngàn, comma là thập phân. Ẩn 0.
+    if pd.isna(val) or (val == 0):
+        return ""
+    val = round(val, 1)
+    return "{:,.1f}%".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
+
+def format_vn_delta_currency(val):
+    # Định dạng So sánh Tuyệt đối (có dấu +/-), hàng đơn vị. Giữ 0 để theo dõi thay đổi.
+    if pd.isna(val):
+        return ""
+    val = round(val)
+    return "{:+, .0f}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
+
+def format_vn_delta_ratio(val):
+    # Định dạng So sánh Tỷ lệ (có dấu +/-), 2 chữ số thập phân (cho độ chính xác khi so sánh). Giữ 0.
+    if pd.isna(val):
+        return ""
+    val = round(val, 2)
+    return "{:+.2f}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
+# === KẾT THÚC ĐỊNH NGHĨA FORMATTERS ===
+
+
 # --- Hàm tính toán chính (Sử dụng Caching để Tối ưu hiệu suất) ---
 @st.cache_data
 def process_financial_data(df_balance_sheet, df_income_statement):
@@ -460,25 +491,25 @@ if uploaded_file is not None:
             with tab1:
                 st.markdown("##### Bảng phân tích Tốc độ Tăng trưởng & So sánh Tuyệt đối (Bảng CĐKT)")
                 st.dataframe(df_growth.style.format({
-                    Y1_Name: '{:,.0f}',
-                    Y2_Name: '{:,.0f}',
-                    Y3_Name: '{:,.0f}',
-                    f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})': '{:,.0f}',
-                    f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})': '{:,.0f}',
-                    f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})': '{:.2f}%',
-                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': '{:.2f}%'
+                    Y1_Name: format_vn_currency,
+                    Y2_Name: format_vn_currency,
+                    Y3_Name: format_vn_currency,
+                    f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_currency,
+                    f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})': format_vn_delta_currency,
+                    f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})': format_vn_percentage,
+                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': format_vn_percentage
                 }), use_container_width=True, hide_index=True)
                 
             # Format và hiển thị tab 2
             with tab2:
                 st.markdown("##### Bảng phân tích Tỷ trọng Cơ cấu Tài sản (%)")
                 st.dataframe(df_structure.style.format({
-                    Y1_Name: '{:,.0f}',
-                    Y2_Name: '{:,.0f}',
-                    Y3_Name: '{:,.0f}',
-                    f'Tỷ trọng {Y1_Name} (%)': '{:.2f}%',
-                    f'Tỷ trọng {Y2_Name} (%)': '{:.2f}%',
-                    f'Tỷ trọng {Y3_Name} (%)': '{:.2f}%'
+                    Y1_Name: format_vn_currency,
+                    Y2_Name: format_vn_currency,
+                    Y3_Name: format_vn_currency,
+                    f'Tỷ trọng {Y1_Name} (%)': format_vn_percentage,
+                    f'Tỷ trọng {Y2_Name} (%)': format_vn_percentage,
+                    f'Tỷ trọng {Y3_Name} (%)': format_vn_percentage
                 }), use_container_width=True, hide_index=True)
             
             # -----------------------------------------------------
@@ -503,13 +534,13 @@ if uploaded_file is not None:
                 st.markdown(f"##### Bảng so sánh Kết quả hoạt động kinh doanh ({Y2_Name} vs {Y1_Name} và {Y3_Name} vs {Y2_Name})")
                 
                 st.dataframe(df_is_display.style.format({
-                    Y1_Name: '{:,.0f}',
-                    Y2_Name: '{:,.0f}',
-                    Y3_Name: '{:,.0f}',
-                    f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})': '{:,.0f}',
-                    f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})': '{:.2f}%',
-                    f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})': '{:,.0f}', 
-                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': '{:.2f}%' 
+                    Y1_Name: format_vn_currency,
+                    Y2_Name: format_vn_currency,
+                    Y3_Name: format_vn_currency,
+                    f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_currency,
+                    f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})': format_vn_percentage,
+                    f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})': format_vn_delta_currency, 
+                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': format_vn_percentage 
                 }), use_container_width=True, hide_index=True)
 
 
@@ -536,10 +567,10 @@ if uploaded_file is not None:
                 ]
                 
                 st.dataframe(df_ratios_display.style.format({
-                    Y1_Name: '{:.2f}%',
-                    Y2_Name: '{:.2f}%',
-                    Y3_Name: '{:.2f}%',
-                    f'So sánh Tương đối ({Y2_Name} vs {Y1_Name})': '{:+.2f}' # Dùng + để hiển thị dấu tăng/giảm rõ ràng
+                    Y1_Name: format_vn_percentage,
+                    Y2_Name: format_vn_percentage,
+                    Y3_Name: format_vn_percentage,
+                    f'So sánh Tương đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio
                 }), use_container_width=True, hide_index=True)
                 
                 ratios_context = df_ratios_processed.to_markdown(index=False)
