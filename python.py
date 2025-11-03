@@ -74,9 +74,15 @@ def process_financial_data(df_balance_sheet, df_income_statement):
         df_is[col] = pd.to_numeric(df_is[col], errors='coerce').fillna(0)
     
     # Tính toán Tăng trưởng & So sánh Tuyệt đối (Delta / Growth)
-    # Y2 vs Y1 (2024 vs 2023)
+    # Y2 vs Y1
     df_is['S.S Tuyệt đối (Y2 vs Y1)'] = df_is['Năm 2'] - df_is['Năm 1']
     df_is['S.S Tương đối (%) (Y2 vs Y1)'] = ((df_is['S.S Tuyệt đối (Y2 vs Y1)'] / df_is['Năm 1'].replace(0, 1e-9)) * 100)
+    
+    # === [V2] BỔ SUNG PHẦN TÍNH TOÁN CÒN THIẾU ===
+    # Y3 vs Y2
+    df_is['S.S Tuyệt đối (Y3 vs Y2)'] = df_is['Năm 3'] - df_is['Năm 2']
+    df_is['S.S Tương đối (%) (Y3 vs Y2)'] = ((df_is['S.S Tuyệt đối (Y3 vs Y2)'] / df_is['Năm 2'].replace(0, 1e-9)) * 100)
+    # === KẾT THÚC BỔ SUNG ===
     
     return df_bs, df_is
 
@@ -206,21 +212,64 @@ if uploaded_file is not None:
             raise Exception("Không thể đọc Sheet 1 (Bảng CĐKT). Vui lòng kiểm tra định dạng sheet.")
             
         # Đọc Sheet 2 cho Báo cáo Kết quả Kinh doanh (KQKD)
-        try:
-            df_raw_is = xls.parse(xls.sheet_names[1], header=0)
-            df_raw_is = clean_column_names(df_raw_is) # CHUẨN HÓA CỘT KQKD
-        except Exception:
-            # Nếu không tìm thấy sheet 2, tạo DataFrame rỗng
+        # === [V3] THAY ĐỔI LOGIC ĐỌC FILE ===
+        # Bỏ qua việc đọc sheet 2, vì chúng ta giả định dữ liệu bị xếp chồng
+        # try:
+        #     df_raw_is = xls.parse(xls.sheet_names[1], header=0)
+        #     df_raw_is = clean_column_names(df_raw_is) # CHUẨN HÓA CỘT KQKD
+        # except Exception:
+        #     # Nếu không tìm thấy sheet 2, tạo DataFrame rỗng
+        #     df_raw_is = pd.DataFrame()
+        #     st.warning("Không tìm thấy Sheet 2 (Báo cáo KQKD). Chỉ phân tích Bảng CĐKT.")
+        
+        # === [V3] LOGIC MỚI: TÁCH SHEET 1 THÀNH 2 DATAFRAME (BĐKT VÀ KQKD) ===
+        st.info("Đang xử lý file... Giả định BĐKT và KQKD nằm chung 1 sheet.")
+        
+        # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' (từ df_raw_bs đã đọc)
+        df_raw_full = df_raw_bs.rename(columns={df_raw_bs.columns[0]: 'Chỉ tiêu'})
+        
+        # 2. Tìm điểm chia (index của hàng chứa 'KẾT QUẢ HOẠT ĐỘNG KINH DOANH')
+        # Chúng ta tìm từ khóa trong cột 'Chỉ tiêu'
+        split_keyword = "KẾT QUẢ HOẠT ĐỘNG KINH DOANH"
+        
+        # Tìm tất cả các hàng chứa từ khóa (có thể có nhiều)
+        split_rows = df_raw_full[df_raw_full['Chỉ tiêu'].str.contains(split_keyword, case=False, na=False)]
+        
+        if split_rows.empty:
+            # Nếu không tìm thấy từ khóa, toàn bộ file là BĐKT, KQKD rỗng
+            st.warning(f"Không tìm thấy từ khóa '{split_keyword}' trong Sheet 1. Chỉ phân tích Bảng CĐKT.")
+            df_raw_bs = df_raw_full.copy()
             df_raw_is = pd.DataFrame()
-            st.warning("Không tìm thấy Sheet 2 (Báo cáo KQKD). Chỉ phân tích Bảng CĐKT.")
-
+        else:
+            # Lấy index của hàng đầu tiên chứa từ khóa
+            split_index = split_rows.index[0]
+            
+            # Tách DataFrame
+            # BĐKT là mọi thứ *trước* hàng chứa từ khóa
+            df_raw_bs = df_raw_full.loc[:split_index-1].copy()
+            
+            # KQKD là mọi thứ *từ* hàng chứa từ khóa trở đi
+            df_raw_is = df_raw_full.loc[split_index:].copy()
+            
+            # Reset lại header cho Báo cáo KQKD (vì nó có thể có header riêng)
+            # Chúng ta cần tìm hàng "CHỈ TIÊU" trong df_raw_is
+            header_row_index = df_raw_is[df_raw_is['Chỉ tiêu'].str.contains("CHỈ TIÊU", case=False, na=False)].index[0]
+            
+            # Lấy tên cột mới từ hàng đó
+            new_header = df_raw_is.loc[header_row_index] 
+            df_raw_is = df_raw_is.loc[header_row_index+1:] # Bỏ hàng header
+            df_raw_is.columns = new_header
+            # Đặt lại tên cột 'Chỉ tiêu' (vì nó có thể bị thay đổi)
+            df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
 
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ---
         
         # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' 
+        # (Đã thực hiện ở trên, nhưng kiểm tra lại cho chắc)
         df_raw_bs = df_raw_bs.rename(columns={df_raw_bs.columns[0]: 'Chỉ tiêu'})
         if not df_raw_is.empty:
             df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
+        # === KẾT THÚC [V3] ===
         
         # 2. Xác định cột năm/kỳ gần nhất ('Năm 3'), 'Năm 2', 'Năm 1'
         
@@ -305,9 +354,12 @@ if uploaded_file is not None:
                 df_is_final = df_is_final[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']].copy()
                 df_is_final = df_is_final.dropna(subset=['Chỉ tiêu'])
             else:
-                st.warning("Các cột năm trong Sheet 2 (KQKD) không khớp với Sheet 1 (Bảng CĐKT) sau khi chuẩn hóa tên. Bỏ qua phân tích KQKD.")
+                # === [V3] CẬP NHẬT CẢNH BÁO ===
+                st.warning("Các cột năm trong phần KQKD (Sheet 1) không khớp với các cột năm của BĐKT. Bỏ qua phân tích KQKD.")
                 df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
         else:
+            # === [V3] CẬP NHẬT CẢNH BÁO ===
+            st.info("Không tìm thấy dữ liệu KQKD (hoặc không tìm thấy từ khóa 'KẾT QUẢ HOẠT ĐỘNG KINH DOANH') để phân tích.")
             df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
 
 
@@ -401,29 +453,41 @@ if uploaded_file is not None:
             st.subheader("4. Phân tích Kết quả hoạt động kinh doanh")
 
             if not df_is_processed.empty:
+                # === [V2] CẬP NHẬT LỰA CHỌN CỘT ===
                 df_is_display = df_is_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 
-                                                'S.S Tuyệt đối (Y2 vs Y1)', 'S.S Tương đối (%) (Y2 vs Y1)']].copy()
+                                                'S.S Tuyệt đối (Y2 vs Y1)', 'S.S Tương đối (%) (Y2 vs Y1)',
+                                                'S.S Tuyệt đối (Y3 vs Y2)', 'S.S Tương đối (%) (Y3 vs Y2)' # Bổ sung cột
+                                                ]].copy()
                 
                 # Đổi tên cột cho trực quan
+                # === [V2] CẬP NHẬT TÊN CỘT ===
                 df_is_display.columns = [
                     'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, 
                     f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})', 
-                    f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})'
+                    f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})',
+                    f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})', # Bổ sung tên
+                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})' # Bổ sung tên
                 ]
                 
-                st.markdown("##### Bảng so sánh Kết quả hoạt động kinh doanh (2024 so với 2023)")
+                st.markdown(f"##### Bảng so sánh Kết quả hoạt động kinh doanh ({Y2_Name} vs {Y1_Name} và {Y3_Name} vs {Y2_Name})")
+                
+                # === [V2] CẬP NHẬT ĐỊNH DẠNG STYLE ===
                 st.dataframe(df_is_display.style.format({
                     Y1_Name: '{:,.0f}',
                     Y2_Name: '{:,.0f}',
                     Y3_Name: '{:,.0f}',
                     f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})': '{:,.0f}',
                     f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})': '{:.2f}%',
+                    f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})': '{:,.0f}', # Bổ sung format
+                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': '{:.2f}%' # Bổ sung format
                 }), use_container_width=True, hide_index=True)
+
 
                 # Cập nhật context cho Chatbot
                 is_context = df_is_processed.to_markdown(index=False)
             else:
-                st.info("Không tìm thấy dữ liệu Báo cáo Kết quả hoạt động kinh doanh để phân tích.")
+                # === [V3] CẬP NHẬT CẢNH BÁO ===
+                st.info("Không có dữ liệu Báo cáo Kết quả hoạt động kinh doanh để hiển thị (đã lọc hoặc không tìm thấy).")
                 is_context = "Không tìm thấy dữ liệu Báo cáo Kết quả hoạt động kinh doanh."
 
             
@@ -447,9 +511,9 @@ if uploaded_file is not None:
                 no_ngan_han_N1 = df_bs_processed[df_bs_processed['Chỉ tiêu'].str.contains('NỢ NGẮN HẠN', case=False, na=False)]['Năm 1'].iloc[0]
 
                 # Tính toán
-                thanh_toan_hien_hanh_N3 = tsnh_n3 / no_ngan_han_N3
-                thanh_toan_hien_hanh_N2 = tsnh_n2 / no_ngan_han_N2
-                thanh_toan_hien_hanh_N1 = tsnh_n1 / no_ngan_han_N1
+                thanh_toan_hien_hanh_N3 = tsnh_n3 / no_ngan_han_N3 if no_ngan_han_N3 != 0 else 0
+                thanh_toan_hien_hanh_N2 = tsnh_n2 / no_ngan_han_N2 if no_ngan_han_N2 != 0 else 0
+                thanh_toan_hien_hanh_N1 = tsnh_n1 / no_ngan_han_N1 if no_ngan_han_N1 != 0 else 0
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -474,6 +538,8 @@ if uploaded_file is not None:
                 st.warning("Thiếu chỉ tiêu 'TÀI SẢN NGẮN HẠN' hoặc 'NỢ NGẮN HẠN' để tính chỉ số.")
             except ZeroDivisionError:
                 st.error("Lỗi chia cho 0 khi tính chỉ số thanh toán. Vui lòng kiểm tra dữ liệu 'Nợ Ngắn Hạn'!")
+            except Exception as e_ratio:
+                st.warning(f"Không thể tính chỉ số thanh toán: {e_ratio}")
             
             # --- CẬP NHẬT DỮ LIỆU CHO CHATBOT (CONTEXT) ---
             data_for_chat_context = f"""
@@ -544,7 +610,8 @@ if uploaded_file is not None:
         st.session_state.data_for_chat = None # Reset chat context
 
 else:
-    st.info("Vui lòng tải lên file Excel hoặc CSV để bắt đầu phân tích.")
+    # === [V3] CẬP NHẬT HƯỚNG DẪN ===
+    st.info("Vui lòng tải lên file Excel (Sheet 1 chứa BĐKT và KQKD) để bắt đầu phân tích.")
     st.session_state.data_for_chat = None # Đảm bảo context được reset khi chưa có file
 
 # --- Chức năng 7: Khung Chatbot tương tác ---
