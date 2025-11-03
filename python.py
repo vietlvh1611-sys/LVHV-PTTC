@@ -266,8 +266,17 @@ if uploaded_file is not None:
             
             # Reset lại header cho Báo cáo KQKD (vì nó có thể có header riêng)
             # Chúng ta cần tìm hàng "CHỈ TIÊU" trong df_raw_is
-            # === [V5] BẢO VỆ VỊ TRÍ TÌM KIẾM CHỈ TIÊU (CHỈ TÌM TỪ CỘT 0 VÀ KIỂM TRA RỖNG) ===
-            header_rows = df_raw_is[df_raw_is['Chỉ tiêu'].str.contains("CHỈ TIÊU", case=False, na=False)]
+            
+            # === [V6] CẢI TIẾN LOGIC TÌM KIẾM VÀ GÁN HEADER LINH HOẠT HƠN ===
+            # Tìm kiếm 'CHỈ TIÊU' trong mọi cột (dùng apply để tìm kiếm hàng)
+            # Chuyển df_raw_is sang kiểu chuỗi để tìm kiếm
+            df_is_str = df_raw_is.apply(lambda col: col.astype(str))
+            
+            # Tạo mask: kiểm tra xem có ô nào trong hàng chứa 'CHỈ TIÊU' hay không
+            keyword = "CHỈ TIÊU"
+            header_mask = df_is_str.apply(lambda row: row.str.contains(keyword, case=False, na=False).any(), axis=1)
+            
+            header_rows = df_raw_is[header_mask]
             
             if header_rows.empty:
                  # Nếu không tìm thấy dòng header "CHỈ TIÊU", giả định KQKD bị lỗi hoặc không có cấu trúc chuẩn
@@ -287,8 +296,15 @@ if uploaded_file is not None:
                 else:
                     df_raw_is.columns = new_header
                     # Đặt lại tên cột 'Chỉ tiêu' (vì nó có thể bị thay đổi)
-                    df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
-            # === KẾT THÚC [V5] ===
+                    # Nếu cột đầu tiên của new_header là NaN, chúng ta giữ nguyên tên cũ (thường là 'Chỉ tiêu')
+                    col_to_rename = df_raw_is.columns[0]
+                    if pd.isna(col_to_rename) or str(col_to_rename).strip() == '':
+                         # Nếu cột đầu tiên bị NaN hoặc rỗng, ta tìm cột nào chứa 'CHỈ TIÊU' để thay thế tên
+                         # Tuy nhiên, cách an toàn nhất là dựa vào vị trí, nên ta chỉ đổi tên cột đầu tiên thành 'Chỉ tiêu'
+                         df_raw_is.rename(columns={col_to_rename: 'Chỉ tiêu'}, inplace=True)
+                    else:
+                        df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
+            # === KẾT THÚC [V6] ===
 
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ---
         
