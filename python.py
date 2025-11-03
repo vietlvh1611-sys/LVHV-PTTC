@@ -232,8 +232,21 @@ if uploaded_file is not None:
         # Chúng ta tìm từ khóa trong cột 'Chỉ tiêu'
         split_keyword = "KẾT QUẢ HOẠT ĐỘNG KINH DOANH"
         
+        # === [V4] CẢI THIỆN TÍNH LINH HOẠT KHI TÌM KIẾM TỪ KHÓA ===
+        # Kết hợp cột 'Chỉ tiêu' (cột 0) và cột 1 để tìm kiếm, vì từ khóa có thể bị dịch chuyển
+        df_raw_full['Chỉ tiêu'] = df_raw_full['Chỉ tiêu'].astype(str)
+        # Đảm bảo cột 1 tồn tại và là chuỗi
+        if len(df_raw_full.columns) > 1:
+             # Tạo một cột tìm kiếm tạm thời bằng cách nối cột 'Chỉ tiêu' và cột 1
+             search_col = df_raw_full['Chỉ tiêu'] + ' ' + df_raw_full[df_raw_full.columns[1]].astype(str)
+        else:
+             search_col = df_raw_full['Chỉ tiêu']
+        
+        
         # Tìm tất cả các hàng chứa từ khóa (có thể có nhiều)
-        split_rows = df_raw_full[df_raw_full['Chỉ tiêu'].str.contains(split_keyword, case=False, na=False)]
+        # split_rows = df_raw_full[df_raw_full['Chỉ tiêu'].str.contains(split_keyword, case=False, na=False)]
+        split_rows = df_raw_full[search_col.str.contains(split_keyword, case=False, na=False)]
+        # === KẾT THÚC [V4] ===
         
         if split_rows.empty:
             # Nếu không tìm thấy từ khóa, toàn bộ file là BĐKT, KQKD rỗng
@@ -574,10 +587,10 @@ if uploaded_file is not None:
                 tsnh_growth_y3y2 = "N/A"
 
             data_for_ai = f"""
-            **Bảng Cân đối Kế toán:**
+            **BẢNG CÂN ĐỐI KẾ TOÁN (Balance Sheet Analysis):**
             {df_bs_processed.to_markdown(index=False)}
             
-            **Báo cáo Kết quả Kinh doanh:**
+            **BÁO CÁO KẾT QUẢ KINH DOANH (Income Statement Analysis):**
             {df_is_processed.to_markdown(index=False)}
 
             **Các Chỉ số Chính:**
