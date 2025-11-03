@@ -458,9 +458,9 @@ if uploaded_file is not None:
         
         df_raw_full['Chỉ tiêu'] = df_raw_full['Chỉ tiêu'].astype(str)
         if len(df_raw_full.columns) > 1:
-             search_col = df_raw_full['Chỉ tiêu'] + ' ' + df_raw_full[df_raw_full.columns[1]].astype(str)
+              search_col = df_raw_full['Chỉ tiêu'] + ' ' + df_raw_full[df_raw_full.columns[1]].astype(str)
         else:
-             search_col = df_raw_full['Chỉ tiêu']
+              search_col = df_raw_full['Chỉ tiêu']
         
         split_rows = df_raw_full[search_col.str.contains(split_keyword, case=False, na=False)]
         
@@ -500,9 +500,9 @@ if uploaded_file is not None:
                     df_raw_is.columns = new_header
                     col_to_rename = df_raw_is.columns[0]
                     if pd.isna(col_to_rename) or str(col_to_rename).strip() == '':
-                          df_raw_is.rename(columns={col_to_rename: 'Chỉ tiêu'}, inplace=True)
+                             df_raw_is.rename(columns={col_to_rename: 'Chỉ tiêu'}, inplace=True)
                     else:
-                          df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
+                             df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
         
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ---
         
@@ -527,12 +527,12 @@ if uploaded_file is not None:
             
             if len(normalized_name) >= 10 and normalized_name[4] == '-' and normalized_name[7] == '-' and normalized_name[:4].isdigit():
                   if normalized_name not in value_cols_unique:
-                     value_cols_unique[normalized_name] = col 
-                     col_name_map[normalized_name] = col_str 
+                      value_cols_unique[normalized_name] = col 
+                      col_name_map[normalized_name] = col_str 
             elif normalized_name.isdigit() and len(normalized_name) == 4 and normalized_name.startswith('20'):
-                 if normalized_name not in value_cols_unique:
-                     value_cols_unique[normalized_name] = col
-                     col_name_map[normalized_name] = col_str 
+                   if normalized_name not in value_cols_unique:
+                       value_cols_unique[normalized_name] = col
+                       col_name_map[normalized_name] = col_str 
 
         normalized_names = list(value_cols_unique.keys())
         
@@ -605,7 +605,7 @@ if uploaded_file is not None:
                  st.warning(f"Các cột năm trong phần KQKD không khớp với BĐKT. Bỏ qua phân tích KQKD. Lỗi chi tiết: Cột {ke} bị thiếu.")
                  df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
             except Exception:
-                  df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+                 df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
                 
         else:
             st.info("Không tìm thấy dữ liệu KQKD để phân tích.")
@@ -660,6 +660,7 @@ if uploaded_file is not None:
             # -----------------------------------------------------
             
             # --- Chức năng 2 & 3: Hiển thị Kết quả theo Tabs ---
+            # Mục 2 (Phân tích BĐKT) đã hiển thị Y1, Y2, Y3
             st.subheader("2. Phân tích Bảng Cân đối Kế toán & 3. Phân tích Tỷ trọng Cơ cấu Tài sản")
             
             # 1. TẠO DATAFRAME BẢNG CĐKT TĂNG TRƯỞNG (GHÉP CỘT)
@@ -813,7 +814,7 @@ if uploaded_file is not None:
                 inv_context = "Không tìm thấy dữ liệu Vòng quay/Thời gian tồn kho."
             
             # -----------------------------------------------------
-            # [V27 - MỚI] CHỨC NĂNG 7: CÁC CHỈ SỐ TÀI CHÍNH CHỦ CHỐT (Thanh toán & Cấu trúc Vốn)
+            # [V27 - ĐÃ SỬA] CHỨC NĂNG 7: CÁC CHỈ SỐ TÀI CHÍNH CHỦ CHỐT (Thanh toán & Cấu trúc Vốn)
             # -----------------------------------------------------
             st.subheader("7. Các Chỉ số Tài chính Chủ chốt (Thanh toán và Cấu trúc Vốn)")
 
@@ -825,23 +826,26 @@ if uploaded_file is not None:
             if not df_combined_key_ratios.empty:
                 df_ratios_final_display = df_combined_key_ratios.copy()
                 
-                # Chỉ giữ lại các cột theo yêu cầu: Chỉ tiêu, Năm 1, Năm 2, So sánh Y2 vs Y1
-                cols_to_display = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'S.S Tuyệt đối (Y2 vs Y1)']
+                # SỬA: Bao gồm cột Năm 3 (kỳ gần nhất)
+                cols_to_display = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'S.S Tuyệt đối (Y2 vs Y1)']
                 df_ratios_final_display = df_ratios_final_display[cols_to_display]
                 
+                # SỬA: Cập nhật tên cột hiển thị
                 df_ratios_final_display.columns = [
                     'Chỉ tiêu', 
                     Y1_Name, 
                     Y2_Name, 
+                    Y3_Name, # ĐÃ THÊM: Năm 3 (kỳ gần nhất)
                     f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})'
                 ]
                 
-                st.markdown(f"##### Bảng tính Chỉ số Thanh toán và Cấu trúc Vốn ({Y1_Name} - {Y2_Name})")
-                
-                # Định dạng tùy chỉnh cho các chỉ tiêu: Tỷ lệ (chỉ số)
+                st.markdown(f"##### Bảng tính Chỉ số Thanh toán và Cấu trúc Vốn ({Y1_Name} - {Y3_Name})") # Sửa tiêu đề
+
+                # SỬA: Thêm định dạng cho cột Y3_Name
                 st.dataframe(df_ratios_final_display.style.apply(highlight_financial_items, axis=1).format({
                     Y1_Name: format_vn_delta_ratio, # Tỷ lệ 2 thập phân
                     Y2_Name: format_vn_delta_ratio, # Tỷ lệ 2 thập phân
+                    Y3_Name: format_vn_delta_ratio, # ĐÃ THÊM: Tỷ lệ 2 thập phân
                     f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio # Delta Tỷ lệ
                 }), use_container_width=True, hide_index=True)
                 
@@ -878,7 +882,7 @@ if uploaded_file is not None:
             
             # Cập nhật tin nhắn chào mừng
             if st.session_state.messages[0]["content"].startswith("Xin chào!") or st.session_state.messages[0]["content"].startswith("Phân tích"):
-                   st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí, **các chỉ số thanh toán**, **hiệu quả sử dụng hàng tồn kho**, và **cấu trúc vốn/hệ số nợ** của báo cáo này."
+                       st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí, **các chỉ số thanh toán**, **hiệu quả sử dụng hàng tồn kho**, và **cấu trúc vốn/hệ số nợ** của báo cáo này."
 
             # -----------------------------------------------------
             # MỤC 8 LÀ KHUNG CHATBOT (Thay thế Mục 9 cũ)
