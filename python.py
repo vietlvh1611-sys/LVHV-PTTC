@@ -112,7 +112,7 @@ def highlight_financial_items(row):
 def process_financial_data(df_balance_sheet, df_income_statement):
     """
     Thực hiện các phép tính Tăng trưởng, So sánh Tuyệt đối, Tỷ trọng Cơ cấu, Tỷ trọng Chi phí/DT thuần và Chỉ số Tài chính.
-    [V23] Trả về tuple (df_bs_processed, df_is_processed, df_ratios_processed, df_financial_ratios)
+    [V24] Trả về tuple (df_bs_processed, df_is_processed, df_ratios_processed, df_financial_ratios)
     """
     
     # -----------------------------------------------------------------
@@ -220,7 +220,7 @@ def process_financial_data(df_balance_sheet, df_income_statement):
         df_ratios['S.S Tương đối (%) (Y2 vs Y1)'] = df_ratios['Năm 2'] - df_ratios['Năm 1']
         
     # -----------------------------------------------------------------
-    # [V23] PHẦN 4: TÍNH CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG (RE-ADDED)
+    # [V24] PHẦN 4: TÍNH CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG (Cập nhật 2 chỉ số)
     # -----------------------------------------------------------------
     
     # --- HÀM HỖ TRỢ TÌM GIÁ TRỊ CỦA CHỈ TIÊU ---
@@ -239,13 +239,27 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     data = {}
     data['TSNH'] = {y: get_value(df_bs, 'Tài sản ngắn hạn|TS ngắn hạn', y) for y in years}
     data['NO_NGAN_HAN'] = {y: get_value(df_bs, 'Nợ ngắn hạn', y) for y in years} 
+    data['HTK'] = {y: get_value(df_bs, 'Hàng tồn kho|HTK', y) for y in years} # Bổ sung HTK
     
-    # Chỉ tính HS thanh toán ngắn hạn
+    
+    # Tính toán chỉ số
     ratios_data = {
-        'Chỉ tiêu': ['HS thanh toán ngắn hạn (Current Ratio)'],
-        'Năm 1': [safe_div(data['TSNH']['Năm 1'], data['NO_NGAN_HAN']['Năm 1'])],
-        'Năm 2': [safe_div(data['TSNH']['Năm 2'], data['NO_NGAN_HAN']['Năm 2'])],
-        'Năm 3': [safe_div(data['TSNH']['Năm 3'], data['NO_NGAN_HAN']['Năm 3'])],
+        'Chỉ tiêu': [
+            'Hệ số thanh toán ngắn hạn (Current Ratio)', 
+            'Hệ số thanh toán nhanh (Quick Ratio)' # Thêm Quick Ratio
+        ],
+        'Năm 1': [
+            safe_div(data['TSNH']['Năm 1'], data['NO_NGAN_HAN']['Năm 1']),
+            safe_div(data['TSNH']['Năm 1'] - data['HTK']['Năm 1'], data['NO_NGAN_HAN']['Năm 1']) # Công thức Quick Ratio
+        ],
+        'Năm 2': [
+            safe_div(data['TSNH']['Năm 2'], data['NO_NGAN_HAN']['Năm 2']),
+            safe_div(data['TSNH']['Năm 2'] - data['HTK']['Năm 2'], data['NO_NGAN_HAN']['Năm 2'])
+        ],
+        'Năm 3': [
+            safe_div(data['TSNH']['Năm 3'], data['NO_NGAN_HAN']['Năm 3']),
+            safe_div(data['TSNH']['Năm 3'] - data['HTK']['Năm 3'], data['NO_NGAN_HAN']['Năm 3'])
+        ],
     }
 
     df_financial_ratios = pd.DataFrame(ratios_data)
@@ -253,7 +267,7 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     # Tính cột so sánh (So sánh Y2 vs Y1)
     df_financial_ratios['S.S Tuyệt đối (Y2 vs Y1)'] = df_financial_ratios['Năm 2'] - df_financial_ratios['Năm 1']
     
-    # [V23] TRẢ VỀ DF MỚI: (df_bs, df_is, df_ratios, df_financial_ratios)
+    # [V24] TRẢ VỀ DF MỚI: (df_bs, df_is, df_ratios, df_financial_ratios)
     return df_bs, df_is, df_ratios, df_financial_ratios
 
 # --- Hàm gọi API Gemini cho Phân tích Báo cáo (Single-shot analysis) ---
@@ -297,11 +311,11 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
         model_name = 'gemini-2.5-flash'
         
         # 1. Định nghĩa System Instruction
-        # [V23] Cập nhật System Instruction: Thêm tham chiếu đến Chỉ số Thanh toán ngắn hạn
+        # [V24] Cập nhật System Instruction: Thêm tham chiếu đến 2 Chỉ số Thanh toán
         system_instruction_text = (
             "Bạn là một trợ lý phân tích tài chính thông minh (Financial Analyst Assistant). "
             "Bạn phải trả lời các câu hỏi của người dùng dựa trên dữ liệu tài chính đã xử lý sau. "
-            "Dữ liệu này bao gồm tốc độ tăng trưởng, so sánh tuyệt đối/tương đối, tỷ trọng cơ cấu, tỷ trọng chi phí/doanh thu thuần, và **chỉ số thanh toán ngắn hạn** trong 3 kỳ Báo cáo tài chính. "
+            "Dữ liệu này bao gồm tốc độ tăng trưởng, so sánh tuyệt đối/tương đối, tỷ trọng cơ cấu, tỷ trọng chi phí/doanh thu thuần, và **các chỉ số thanh toán ngắn hạn và nhanh** trong 3 kỳ Báo cáo tài chính. "
             "Nếu người dùng hỏi một câu không liên quan đến dữ liệu tài chính hoặc phân tích, hãy lịch sự từ chối trả lời. "
             "Dữ liệu tài chính đã xử lý (được trình bày dưới dạng Markdown để bạn dễ hiểu): \n\n" + context_data
         )
@@ -543,7 +557,7 @@ if uploaded_file is not None:
 
 
         # Xử lý dữ liệu
-        # [V23] CẬP NHẬT: Thêm df_financial_ratios_processed
+        # [V24] CẬP NHẬT: Thêm df_financial_ratios_processed
         df_bs_processed, df_is_processed, df_ratios_processed, df_financial_ratios_processed = process_financial_data(df_bs_final.copy(), df_is_final.copy())
 
         # === [V15] LỌC BỎ CÁC DÒNG CÓ TẤT CẢ GIÁ TRỊ NĂM BẰNG 0 ===
@@ -557,7 +571,7 @@ if uploaded_file is not None:
         df_bs_processed = filter_zero_rows(df_bs_processed)
         df_is_processed = filter_zero_rows(df_is_processed)
         df_ratios_processed = filter_zero_rows(df_ratios_processed)
-        # [V23] Thêm df_financial_ratios_processed vào bộ lọc
+        # [V24] Thêm df_financial_ratios_processed vào bộ lọc
         df_financial_ratios_processed = filter_zero_rows(df_financial_ratios_processed)
         # === KẾT THÚC [V15] ===
 
@@ -703,7 +717,7 @@ if uploaded_file is not None:
                 ratios_context = "Không tìm thấy dữ liệu Tỷ trọng Chi phí/Doanh thu thuần."
             
             # -----------------------------------------------------
-            # [V23] CHỨC NĂNG 6: CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG (RE-ADDED)
+            # [V24] CHỨC NĂNG 6: CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG
             # -----------------------------------------------------
             st.subheader("6. Các Chỉ số Tài chính Quan trọng")
 
@@ -738,7 +752,7 @@ if uploaded_file is not None:
             # -----------------------------------------------------
             # [V18] CẬP NHẬT CONTEXT CHO CHATBOT 
             # -----------------------------------------------------
-            # [V23] Cập nhật Context: Thêm Chỉ số Tài chính Quan trọng
+            # [V24] Cập nhật Context: Thêm Chỉ số Tài chính Quan trọng
             data_for_chat_context = f"""
             **BẢNG CÂN ĐỐI KẾ TOÁN (Balance Sheet Analysis):**
             {df_bs_processed.to_markdown(index=False)}
@@ -756,8 +770,8 @@ if uploaded_file is not None:
             
             # Cập nhật tin nhắn chào mừng
             if st.session_state.messages[0]["content"].startswith("Xin chào!") or st.session_state.messages[0]["content"].startswith("Phân tích"):
-                 # [V23] Cập nhật tin nhắn chào mừng: Thêm tham chiếu đến chỉ số thanh toán
-                 st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí và **chỉ số thanh toán** của báo cáo này."
+                 # [V24] Cập nhật tin nhắn chào mừng: Thêm tham chiếu đến chỉ số thanh toán
+                 st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí và **các chỉ số thanh toán** của báo cáo này."
 
             # -----------------------------------------------------
             # MỤC 7 ĐÃ ĐƯỢC ĐỔI THÀNH CHAT
