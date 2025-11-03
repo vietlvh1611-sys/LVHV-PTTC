@@ -112,7 +112,7 @@ def highlight_financial_items(row):
 def process_financial_data(df_balance_sheet, df_income_statement):
     """
     Thực hiện các phép tính Tăng trưởng, So sánh Tuyệt đối, Tỷ trọng Cơ cấu, Tỷ trọng Chi phí/DT thuần và Chỉ số Tài chính.
-    [V26] Thêm Chỉ số Cấu trúc Vốn (Solvency/Leverage).
+    Bây giờ hỗ trợ 4 năm/kỳ: Năm 1, Năm 2, Năm 3, Năm 4 (gần nhất).
     Trả về tuple (df_bs_processed, df_is_processed, df_ratios_processed, df_final_ratios)
     """
     
@@ -122,34 +122,41 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     df_bs = df_balance_sheet.copy()
     
     # Đảm bảo các giá trị là số để tính toán
-    numeric_cols_bs = ['Năm 1', 'Năm 2', 'Năm 3']
+    numeric_cols_bs = ['Năm 1', 'Năm 2', 'Năm 3', 'Năm 4']
     for col in numeric_cols_bs:
         df_bs[col] = pd.to_numeric(df_bs[col], errors='coerce').fillna(0)
     
     # Tính toán Tăng trưởng & So sánh Tuyệt đối (Delta / Growth)
     df_bs['Delta (Y2 vs Y1)'] = df_bs['Năm 2'] - df_bs['Năm 1']
     df_bs['Growth (Y2 vs Y1)'] = ((df_bs['Delta (Y2 vs Y1)'] / df_bs['Năm 1'].replace(0, 1e-9)) * 100)
+    
     df_bs['Delta (Y3 vs Y2)'] = df_bs['Năm 3'] - df_bs['Năm 2']
     df_bs['Growth (Y3 vs Y2)'] = ((df_bs['Delta (Y3 vs Y2)'] / df_bs['Năm 2'].replace(0, 1e-9)) * 100)
+    
+    df_bs['Delta (Y4 vs Y3)'] = df_bs['Năm 4'] - df_bs['Năm 3'] # NEW
+    df_bs['Growth (Y4 vs Y3)'] = ((df_bs['Delta (Y4 vs Y3)'] / df_bs['Năm 3'].replace(0, 1e-9)) * 100) # NEW
 
     # Tính Tỷ trọng theo Tổng Tài sản
     tong_tai_san_row = df_bs[df_bs['Chỉ tiêu'].str.contains('TỔNG CỘNG TÀI SẢN|TỔNG CỘNG', case=False, na=False)]
     
     if tong_tai_san_row.empty:
-        tong_tai_san_N1, tong_tai_san_N2, tong_tai_san_N3 = 1e-9, 1e-9, 1e-9
+        tong_tai_san_N1, tong_tai_san_N2, tong_tai_san_N3, tong_tai_san_N4 = 1e-9, 1e-9, 1e-9, 1e-9
         st.warning("Không tìm thấy TỔNG CỘNG TÀI SẢN. Tỷ trọng cơ cấu có thể bị sai hoặc không tính được.")
     else:
         tong_tai_san_N1 = tong_tai_san_row['Năm 1'].iloc[0]
         tong_tai_san_N2 = tong_tai_san_row['Năm 2'].iloc[0]
         tong_tai_san_N3 = tong_tai_san_row['Năm 3'].iloc[0]
+        tong_tai_san_N4 = tong_tai_san_row['Năm 4'].iloc[0] # NEW
 
     divisor_N1 = tong_tai_san_N1 if tong_tai_san_N1 != 0 else 1e-9
     divisor_N2 = tong_tai_san_N2 if tong_tai_san_N2 != 0 else 1e-9
     divisor_N3 = tong_tai_san_N3 if tong_tai_san_N3 != 0 else 1e-9
+    divisor_N4 = tong_tai_san_N4 if tong_tai_san_N4 != 0 else 1e-9 # NEW
 
     df_bs['Tỷ trọng Năm 1 (%)'] = (df_bs['Năm 1'] / divisor_N1) * 100
     df_bs['Tỷ trọng Năm 2 (%)'] = (df_bs['Năm 2'] / divisor_N2) * 100
     df_bs['Tỷ trọng Năm 3 (%)'] = (df_bs['Năm 3'] / divisor_N3) * 100
+    df_bs['Tỷ trọng Năm 4 (%)'] = (df_bs['Năm 4'] / divisor_N4) * 100 # NEW
     
     # -----------------------------------------------------------------
     # PHẦN 2: XỬ LÝ BÁO CÁO KẾT QUẢ KINH DOANH (INCOME STATEMENT - IS)
@@ -157,7 +164,7 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     df_is = df_income_statement.copy()
     
     # Đảm bảo các giá trị là số để tính toán
-    numeric_cols_is = ['Năm 1', 'Năm 2', 'Năm 3']
+    numeric_cols_is = ['Năm 1', 'Năm 2', 'Năm 3', 'Năm 4'] # Changed to 4 years
     for col in numeric_cols_is:
         df_is[col] = pd.to_numeric(df_is[col], errors='coerce').fillna(0)
     
@@ -168,26 +175,30 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     df_is['S.S Tuyệt đối (Y3 vs Y2)'] = df_is['Năm 3'] - df_is['Năm 2']
     df_is['S.S Tương đối (%) (Y3 vs Y2)'] = ((df_is['S.S Tuyệt đối (Y3 vs Y2)'] / df_is['Năm 2'].replace(0, 1e-9)) * 100)
     
+    df_is['S.S Tuyệt đối (Y4 vs Y3)'] = df_is['Năm 4'] - df_is['Năm 3'] # NEW
+    df_is['S.S Tương đối (%) (Y4 vs Y3)'] = ((df_is['S.S Tuyệt đối (Y4 vs Y3)'] / df_is['Năm 3'].replace(0, 1e-9)) * 100) # NEW
+    
     # -----------------------------------------------------------------
     # PHẦN 3: TÍNH TỶ TRỌNG CHI PHÍ / DOANH THU THUẦN
     # -----------------------------------------------------------------
-    df_ratios = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+    df_ratios = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4'])
 
     # 1. Tìm Doanh thu thuần (Mẫu số)
     dt_thuan_row = df_is[df_is['Chỉ tiêu'].str.contains('Doanh thu thuần về bán hàng', case=False, na=False)]
     
     if dt_thuan_row.empty:
-        DT_thuan_N1, DT_thuan_N2, DT_thuan_N3 = 1e-9, 1e-9, 1e-9
+        DT_thuan_N1, DT_thuan_N2, DT_thuan_N3, DT_thuan_N4 = 1e-9, 1e-9, 1e-9, 1e-9
     else:
         # Lấy giá trị DT thuần, tránh chia cho 0
         DT_thuan_N1 = dt_thuan_row['Năm 1'].iloc[0] if dt_thuan_row['Năm 1'].iloc[0] != 0 else 1e-9
         DT_thuan_N2 = dt_thuan_row['Năm 2'].iloc[0] if dt_thuan_row['Năm 2'].iloc[0] != 0 else 1e-9
         DT_thuan_N3 = dt_thuan_row['Năm 3'].iloc[0] if dt_thuan_row['Năm 3'].iloc[0] != 0 else 1e-9
+        DT_thuan_N4 = dt_thuan_row['Năm 4'].iloc[0] if dt_thuan_row['Năm 4'].iloc[0] != 0 else 1e-9 # NEW
     
     # Tính tỷ trọng (dù có DT thuần hay không, để tránh lỗi)
     if not df_is.empty and not dt_thuan_row.empty:
-        divisors = [DT_thuan_N1, DT_thuan_N2, DT_thuan_N3]
-        years = ['Năm 1', 'Năm 2', 'Năm 3']
+        divisors = [DT_thuan_N1, DT_thuan_N2, DT_thuan_N3, DT_thuan_N4] # Changed to 4 divisors
+        years = ['Năm 1', 'Năm 2', 'Năm 3', 'Năm 4'] # Changed to 4 years
         
         # Mapping các chỉ tiêu cần tính tỷ trọng
         ratio_mapping = {
@@ -203,15 +214,16 @@ def process_financial_data(df_balance_sheet, df_income_statement):
             row = df_is[df_is['Chỉ tiêu'].str.contains(search_keyword, case=False, na=False)]
             
             if not row.empty:
-                ratios = [0, 0, 0]
+                ratios = [0, 0, 0, 0] # Changed to 4 items
                 for i, year in enumerate(years):
                     value = row[year].iloc[0]
                     ratios[i] = (value / divisors[i]) * 100
                 
                 data_ratio_is.append([ratio_name] + ratios)
 
-        df_ratios = pd.DataFrame(data_ratio_is, columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+        df_ratios = pd.DataFrame(data_ratio_is, columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4']) # Changed to 4 years
         df_ratios['S.S Tương đối (%) (Y2 vs Y1)'] = df_ratios['Năm 2'] - df_ratios['Năm 1']
+        df_ratios['S.S Tương đối (%) (Y4 vs Y3)'] = df_ratios['Năm 4'] - df_ratios['Năm 3'] # NEW
         
     # --- HÀM HỖ TRỢ TÌM GIÁ TRỊ CỦA CHỈ TIÊU (Dùng chung cho Ratios) ---
     def get_value(df, keyword, year):
@@ -224,7 +236,7 @@ def process_financial_data(df_balance_sheet, df_income_statement):
         # Trả về 0 nếu mẫu số là 0, nếu không tính toán
         return numerator / denominator if denominator != 0 else 0
 
-    years = ['Năm 1', 'Năm 2', 'Năm 3']
+    years = ['Năm 1', 'Năm 2', 'Năm 3', 'Năm 4'] # Changed to 4 years
     
     # Lấy các giá trị cần thiết từ Bảng CĐKT (BS) và KQKD (IS)
     data = {}
@@ -247,14 +259,14 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     inventory_days = {}
 
     # Hàng tồn kho bình quân: (HTK_kỳ này + HTK_kỳ trước) / 2
-    for i, y in enumerate(years):
+    for i, y in enumerate(years): 
         htk_current = data['HTK'][y]
         
         if i == 0:
             # Năm 1: Giả định HTK kỳ trước = HTK năm 1 
             htk_previous = htk_current
         else:
-            # Năm 2: HTK kỳ trước là HTK Năm 1. Năm 3: HTK kỳ trước là HTK Năm 2.
+            # Lấy kỳ trước đó
             htk_previous = data['HTK'][years[i-1]]
             
         avg_inventory[y] = safe_div(htk_current + htk_previous, 2)
@@ -271,9 +283,11 @@ def process_financial_data(df_balance_sheet, df_income_statement):
         'Năm 1': [inventory_turnover['Năm 1'], inventory_days['Năm 1']],
         'Năm 2': [inventory_turnover['Năm 2'], inventory_days['Năm 2']],
         'Năm 3': [inventory_turnover['Năm 3'], inventory_days['Năm 3']],
+        'Năm 4': [inventory_turnover['Năm 4'], inventory_days['Năm 4']], # NEW
     }
     df_inventory_ratios = pd.DataFrame(inventory_ratios_data)
     df_inventory_ratios['S.S Tuyệt đối (Y2 vs Y1)'] = df_inventory_ratios['Năm 2'] - df_inventory_ratios['Năm 1']
+    df_inventory_ratios['S.S Tuyệt đối (Y4 vs Y3)'] = df_inventory_ratios['Năm 4'] - df_inventory_ratios['Năm 3'] # NEW
 
 
     # -----------------------------------------------------------------
@@ -296,9 +310,15 @@ def process_financial_data(df_balance_sheet, df_income_statement):
             safe_div(data['TSNH']['Năm 3'], data['NO_NGAN_HAN']['Năm 3']),
             safe_div(data['TSNH']['Năm 3'] - data['HTK']['Năm 3'], data['NO_NGAN_HAN']['Năm 3'])
         ],
+        'Năm 4': [ # NEW
+            safe_div(data['TSNH']['Năm 4'], data['NO_NGAN_HAN']['Năm 4']),
+            safe_div(data['TSNH']['Năm 4'] - data['HTK']['Năm 4'], data['NO_NGAN_HAN']['Năm 4'])
+        ],
     }
     df_liquidity_ratios = pd.DataFrame(ratios_data_liquidity)
     df_liquidity_ratios['S.S Tuyệt đối (Y2 vs Y1)'] = df_liquidity_ratios['Năm 2'] - df_liquidity_ratios['Năm 1']
+    df_liquidity_ratios['S.S Tuyệt đối (Y4 vs Y3)'] = df_liquidity_ratios['Năm 4'] - df_liquidity_ratios['Năm 3'] # NEW
+
 
     # -----------------------------------------------------------------
     # [V26] PHẦN 6: TÍNH CHỈ SỐ CẤU TRÚC VỐN (SOLVENCY/LEVERAGE)
@@ -320,9 +340,14 @@ def process_financial_data(df_balance_sheet, df_income_statement):
             safe_div(data['VCSH']['Năm 3'], data['TTS']['Năm 3']),
             safe_div(data['NPT']['Năm 3'], data['VCSH']['Năm 3']),
         ],
+        'Năm 4': [ # NEW
+            safe_div(data['VCSH']['Năm 4'], data['TTS']['Năm 4']),
+            safe_div(data['NPT']['Năm 4'], data['VCSH']['Năm 4']),
+        ],
     }
     df_solvency_ratios = pd.DataFrame(solvency_data)
     df_solvency_ratios['S.S Tuyệt đối (Y2 vs Y1)'] = df_solvency_ratios['Năm 2'] - df_solvency_ratios['Năm 1']
+    df_solvency_ratios['S.S Tuyệt đối (Y4 vs Y3)'] = df_solvency_ratios['Năm 4'] - df_solvency_ratios['Năm 3'] # NEW
 
     # Hợp nhất: Liquidity (Thanh toán) + Inventory (Hoạt động) + Solvency (Cấu trúc vốn)
     df_final_ratios = pd.concat([df_liquidity_ratios, df_inventory_ratios, df_solvency_ratios], ignore_index=True)
@@ -340,7 +365,7 @@ def get_ai_analysis(data_for_ai, api_key):
         system_instruction_text = (
             "Bạn là một chuyên gia phân tích tài chính chuyên nghiệp. "
             "Dựa trên dữ liệu đã cung cấp, hãy đưa ra một nhận xét khách quan, ngắn gọn (khoảng 3-4 đoạn) về tình hình tài chính của doanh nghiệp. "
-            "Đánh giá tập trung vào tốc độ tăng trưởng qua các chu kỳ, thay đổi cơ cấu tài sản, **tỷ trọng chi phí/doanh thu thuần**, **hiệu quả quản lý hàng tồn kho**, và **cấu trúc vốn (Hệ số tự tài trợ và Hệ số nợ/VCSH)** trong 3 năm/kỳ."
+            "Đánh giá tập trung vào tốc độ tăng trưởng qua các chu kỳ, thay đổi cơ cấu tài sản, **tỷ trọng chi phí/doanh thu thuần**, **hiệu quả quản lý hàng tồn kho**, và **cấu trúc vốn (Hệ số tự tài trợ và Hệ số nợ/VCSH)** trong 4 năm/kỳ." # Updated instruction
         )
         
         user_prompt = f"""
@@ -375,7 +400,7 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
         system_instruction_text = (
             "Bạn là một trợ lý phân tích tài chính thông minh (Financial Analyst Assistant). "
             "Bạn phải trả lời các câu hỏi của người dùng dựa trên dữ liệu tài chính đã xử lý sau. "
-            "Dữ liệu này bao gồm tốc độ tăng trưởng, so sánh tuyệt đối/tương đối, tỷ trọng cơ cấu, tỷ trọng chi phí/doanh thu thuần, **các chỉ số thanh toán ngắn hạn và nhanh**, **hiệu quả hàng tồn kho (Vòng quay và Thời gian tồn kho)**, và **cấu trúc vốn (Hệ số tự tài trợ và Hệ số nợ/VCSH)** trong 3 kỳ Báo cáo tài chính. "
+            "Dữ liệu này bao gồm tốc độ tăng trưởng, so sánh tuyệt đối/tương đối, tỷ trọng cơ cấu, tỷ trọng chi phí/doanh thu thuần, **các chỉ số thanh toán ngắn hạn và nhanh**, **hiệu quả hàng tồn kho (Vòng quay và Thời gian tồn kho)**, và **cấu trúc vốn (Hệ số tự tài trợ và Hệ số nợ/VCSH)** trong 4 kỳ Báo cáo tài chính. " # Updated instruction
             "Nếu người dùng hỏi một câu không liên quan đến dữ liệu tài chính hoặc phân tích, hãy lịch sự từ chối trả lời. "
             "Dữ liệu tài chính đã xử lý (được trình bày dưới dạng Markdown để bạn dễ hiểu): \n\n" + context_data
         )
@@ -415,7 +440,7 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
 
 # --- Chức năng 1: Tải File ---
 uploaded_file = st.file_uploader(
-    "1. Tải file Excel (Sheet 1: BĐKT và KQKD - Tối thiểu 3 cột năm)",
+    "1. Tải file Excel (Sheet 1: BĐKT và KQKD - Tối thiểu 4 cột năm)", # Updated instruction
     type=['xlsx', 'xls']
 )
 
@@ -514,7 +539,7 @@ if uploaded_file is not None:
             df_raw_is.columns = [str(col) for col in df_raw_is.columns]
         
         
-        # 2. Xác định cột năm/kỳ gần nhất ('Năm 3', 'Năm 2', 'Năm 1')
+        # 2. Xác định cột năm/kỳ gần nhất ('Năm 4', 'Năm 3', 'Năm 2', 'Năm 1')
         value_cols_unique = {} 
         col_name_map = {} 
         for col in df_raw_bs.columns:
@@ -536,15 +561,16 @@ if uploaded_file is not None:
 
         normalized_names = list(value_cols_unique.keys())
         
-        if len(normalized_names) < 3: 
-            st.warning(f"Chỉ tìm thấy {len(normalized_names)} cột năm trong Sheet 1 (Bảng CĐKT). Ứng dụng cần ít nhất 3 năm/kỳ để so sánh.")
+        if len(normalized_names) < 4: # Changed from 3 to 4
+            st.warning(f"Chỉ tìm thấy {len(normalized_names)} cột năm trong Sheet 1 (Bảng CĐKT). Ứng dụng cần ít nhất 4 năm/kỳ để so sánh.")
             st.stop()
             
         normalized_names.sort(key=lambda x: str(x), reverse=True)
         
-        col_nam_3 = col_name_map[normalized_names[0]] 
-        col_nam_2 = col_name_map[normalized_names[1]] 
-        col_nam_1 = col_name_map[normalized_names[2]] 
+        col_nam_4 = col_name_map[normalized_names[0]] # Năm 4 (Mới nhất)
+        col_nam_3 = col_name_map[normalized_names[1]] # Năm 3
+        col_nam_2 = col_name_map[normalized_names[2]] # Năm 2
+        col_nam_1 = col_name_map[normalized_names[3]] # Năm 1 (Lâu nhất)
         
         
         # 3. Lọc bỏ hàng đầu tiên chứa các chỉ số so sánh (SS) không cần thiết (chỉ BĐKT)
@@ -581,35 +607,35 @@ if uploaded_file is not None:
                 df_raw_is = pd.DataFrame()
 
 
-        # 4. Tạo DataFrame Bảng CĐKT và KQKD đã lọc (chỉ giữ lại 4 cột)
-        cols_to_keep = ['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]
+        # 4. Tạo DataFrame Bảng CĐKT và KQKD đã lọc (chỉ giữ lại 5 cột)
+        cols_to_keep = ['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3, col_nam_4] # Changed to 5 columns
 
         # Bảng CĐKT
         try:
             df_bs_final = df_raw_bs[cols_to_keep].copy()
-            df_bs_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
+            df_bs_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4'] # Changed to 4 years
             df_bs_final = df_bs_final.dropna(subset=['Chỉ tiêu'])
         except KeyError as ke:
              st.warning(f"Lỗi truy cập cột: {ke}. BĐKT có thể rỗng hoặc bị mất cột 'Chỉ tiêu'. Khởi tạo BĐKT rỗng.")
-             df_bs_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+             df_bs_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4']) # Changed to 4 years
         
 
         # Báo cáo KQKD
         if not df_raw_is.empty:
             try:
                 df_is_final = df_raw_is[cols_to_keep].copy() 
-                df_is_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
+                df_is_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4'] # Changed to 4 years
                 df_is_final = df_is_final.dropna(subset=['Chỉ tiêu'])
                 
             except KeyError as ke:
                  st.warning(f"Các cột năm trong phần KQKD không khớp với BĐKT. Bỏ qua phân tích KQKD. Lỗi chi tiết: Cột {ke} bị thiếu.")
-                 df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+                 df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4']) # Changed to 4 years
             except Exception:
-                 df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+                 df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4']) # Changed to 4 years
                 
         else:
             st.info("Không tìm thấy dữ liệu KQKD để phân tích.")
-            df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+            df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4']) # Changed to 4 years
 
 
         # Xử lý dữ liệu
@@ -621,7 +647,7 @@ if uploaded_file is not None:
                 return df
             
             # Lọc các cột số có trong df
-            numeric_cols = ['Năm 1', 'Năm 2', 'Năm 3']
+            numeric_cols = ['Năm 1', 'Năm 2', 'Năm 3', 'Năm 4'] # Changed to 4 years
             cols_to_sum = [col for col in numeric_cols if col in df.columns]
             
             if not cols_to_sum:
@@ -657,32 +683,35 @@ if uploaded_file is not None:
             Y1_Name = format_col_name(col_nam_1)
             Y2_Name = format_col_name(col_nam_2)
             Y3_Name = format_col_name(col_nam_3)
+            Y4_Name = format_col_name(col_nam_4) # NEW
             # -----------------------------------------------------
             
             # --- Chức năng 2 & 3: Hiển thị Kết quả theo Tabs ---
-            # Mục 2 (Phân tích BĐKT) đã hiển thị Y1, Y2, Y3
             st.subheader("2. Phân tích Bảng Cân đối Kế toán & 3. Phân tích Tỷ trọng Cơ cấu Tài sản")
             
             # 1. TẠO DATAFRAME BẢNG CĐKT TĂNG TRƯỞNG (GHÉP CỘT)
-            df_growth = df_bs_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 
+            df_growth = df_bs_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4', # Added Năm 4
                                          'Delta (Y2 vs Y1)', 'Growth (Y2 vs Y1)', 
-                                         'Delta (Y3 vs Y2)', 'Growth (Y3 vs Y2)']].copy()
+                                         'Delta (Y3 vs Y2)', 'Growth (Y3 vs Y2)',
+                                         'Delta (Y4 vs Y3)', 'Growth (Y4 vs Y3)']].copy() # Added Y4 vs Y3
             
             df_growth.columns = [
-                'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, 
+                'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, Y4_Name, # Added Y4_Name
                 f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})', 
                 f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})',
                 f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})', 
-                f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})'
+                f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})',
+                f'S.S Tuyệt đối ({Y4_Name} vs {Y3_Name})', # Added Y4 vs Y3
+                f'S.S Tương đối (%) ({Y4_Name} vs {Y3_Name})' # Added Y4 vs Y3
             ]
             
             # 2. TẠO DATAFRAME BẢNG CĐKT CƠ CẤU
-            df_structure = df_bs_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 
-                                            'Tỷ trọng Năm 1 (%)', 'Tỷ trọng Năm 2 (%)', 'Tỷ trọng Năm 3 (%)']].copy()
+            df_structure = df_bs_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4', # Added Năm 4
+                                            'Tỷ trọng Năm 1 (%)', 'Tỷ trọng Năm 2 (%)', 'Tỷ trọng Năm 3 (%)', 'Tỷ trọng Năm 4 (%)']].copy() # Added Năm 4
             
             df_structure.columns = [
-                'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, 
-                f'Tỷ trọng {Y1_Name} (%)', f'Tỷ trọng {Y2_Name} (%)', f'Tỷ trọng {Y3_Name} (%)'
+                'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, Y4_Name, # Added Y4_Name
+                f'Tỷ trọng {Y1_Name} (%)', f'Tỷ trọng {Y2_Name} (%)', f'Tỷ trọng {Y3_Name} (%)', f'Tỷ trọng {Y4_Name} (%)' # Added Y4_Name
             ]
 
             tab1, tab2 = st.tabs(["📈 Tốc độ Tăng trưởng Bảng CĐKT", "🏗️ Tỷ trọng Cơ cấu Tài sản"])
@@ -694,10 +723,13 @@ if uploaded_file is not None:
                     Y1_Name: format_vn_currency,
                     Y2_Name: format_vn_currency,
                     Y3_Name: format_vn_currency,
+                    Y4_Name: format_vn_currency, # NEW
                     f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_currency,
                     f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})': format_vn_delta_currency,
+                    f'S.S Tuyệt đối ({Y4_Name} vs {Y3_Name})': format_vn_delta_currency, # NEW
                     f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})': format_vn_percentage,
-                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': format_vn_percentage
+                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': format_vn_percentage,
+                    f'S.S Tương đối (%) ({Y4_Name} vs {Y3_Name})': format_vn_percentage # NEW
                 }), use_container_width=True, hide_index=True)
                 
             # Format và hiển thị tab 2
@@ -707,9 +739,11 @@ if uploaded_file is not None:
                     Y1_Name: format_vn_currency,
                     Y2_Name: format_vn_currency,
                     Y3_Name: format_vn_currency,
+                    Y4_Name: format_vn_currency, # NEW
                     f'Tỷ trọng {Y1_Name} (%)': format_vn_percentage,
                     f'Tỷ trọng {Y2_Name} (%)': format_vn_percentage,
-                    f'Tỷ trọng {Y3_Name} (%)': format_vn_percentage
+                    f'Tỷ trọng {Y3_Name} (%)': format_vn_percentage,
+                    f'Tỷ trọng {Y4_Name} (%)': format_vn_percentage # NEW
                 }), use_container_width=True, hide_index=True)
                 
             # -----------------------------------------------------
@@ -718,29 +752,35 @@ if uploaded_file is not None:
             st.subheader("4. Phân tích Kết quả hoạt động kinh doanh")
 
             if not df_is_processed.empty:
-                df_is_display = df_is_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 
+                df_is_display = df_is_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4', # Added Năm 4
                                                  'S.S Tuyệt đối (Y2 vs Y1)', 'S.S Tương đối (%) (Y2 vs Y1)',
-                                                 'S.S Tuyệt đối (Y3 vs Y2)', 'S.S Tương đối (%) (Y3 vs Y2)'
+                                                 'S.S Tuyệt đối (Y3 vs Y2)', 'S.S Tương đối (%) (Y3 vs Y2)',
+                                                 'S.S Tuyệt đối (Y4 vs Y3)', 'S.S Tương đối (%) (Y4 vs Y3)' # Added Y4 vs Y3
                                                  ]].copy()
                 
                 df_is_display.columns = [
-                    'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, 
+                    'Chỉ tiêu', Y1_Name, Y2_Name, Y3_Name, Y4_Name, # Added Y4_Name
                     f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})', 
                     f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})',
                     f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})', 
-                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})'
+                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})',
+                    f'S.S Tuyệt đối ({Y4_Name} vs {Y3_Name})', # Added Y4 vs Y3
+                    f'S.S Tương đối (%) ({Y4_Name} vs {Y3_Name})' # Added Y4 vs Y3
                 ]
                 
-                st.markdown(f"##### Bảng so sánh Kết quả hoạt động kinh doanh ({Y2_Name} vs {Y1_Name} và {Y3_Name} vs {Y2_Name})")
+                st.markdown(f"##### Bảng so sánh Kết quả hoạt động kinh doanh ({Y2_Name} vs {Y1_Name}, {Y3_Name} vs {Y2_Name} và {Y4_Name} vs {Y3_Name})") # Updated Title
                 
                 st.dataframe(df_is_display.style.apply(highlight_financial_items, axis=1).format({
                     Y1_Name: format_vn_currency,
                     Y2_Name: format_vn_currency,
                     Y3_Name: format_vn_currency,
+                    Y4_Name: format_vn_currency, # NEW
                     f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_currency,
                     f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})': format_vn_percentage,
                     f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})': format_vn_delta_currency, 
-                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': format_vn_percentage 
+                    f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': format_vn_percentage, 
+                    f'S.S Tuyệt đối ({Y4_Name} vs {Y3_Name})': format_vn_delta_currency, # NEW
+                    f'S.S Tương đối (%) ({Y4_Name} vs {Y3_Name})': format_vn_percentage # NEW
                 }), use_container_width=True, hide_index=True)
 
                 is_context = df_is_processed.to_markdown(index=False)
@@ -755,21 +795,27 @@ if uploaded_file is not None:
             st.subheader("5. Tỷ trọng Chi phí/Doanh thu thuần (%)")
             
             if not df_ratios_processed.empty:
-                # Cột so sánh là Năm 2 vs Năm 1
-                df_ratios_display = df_ratios_processed.copy()
+                # SỬA: Bao gồm cột Năm 4 và So sánh Y4 vs Y3
+                df_ratios_display = df_ratios_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4', 
+                                                         'S.S Tương đối (%) (Y2 vs Y1)', 'S.S Tương đối (%) (Y4 vs Y3)']].copy()
+                
                 df_ratios_display.columns = [
                     'Chỉ tiêu', 
                     Y1_Name, 
                     Y2_Name, 
                     Y3_Name, 
-                    f'So sánh Tương đối ({Y2_Name} vs {Y1_Name})'
+                    Y4_Name, # NEW
+                    f'So sánh Tương đối ({Y2_Name} vs {Y1_Name})',
+                    f'So sánh Tương đối ({Y4_Name} vs {Y3_Name})' # NEW
                 ]
                 
                 st.dataframe(df_ratios_display.style.apply(highlight_financial_items, axis=1).format({
                     Y1_Name: format_vn_percentage,
                     Y2_Name: format_vn_percentage,
                     Y3_Name: format_vn_percentage,
-                    f'So sánh Tương đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio
+                    Y4_Name: format_vn_percentage, # NEW
+                    f'So sánh Tương đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio,
+                    f'So sánh Tương đối ({Y4_Name} vs {Y3_Name})': format_vn_delta_ratio # NEW
                 }), use_container_width=True, hide_index=True)
                 
                 ratios_context = df_ratios_processed.to_markdown(index=False)
@@ -788,24 +834,29 @@ if uploaded_file is not None:
             ].copy()
 
             if not df_inventory_ratios_processed.empty:
-                df_inv_display = df_inventory_ratios_processed.copy()
+                df_inv_display = df_inventory_ratios_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4', # Added Năm 4
+                                                                'S.S Tuyệt đối (Y2 vs Y1)', 'S.S Tuyệt đối (Y4 vs Y3)']].copy() # Added Y4 vs Y3
                 
                 df_inv_display.columns = [
                     'Chỉ tiêu', 
                     Y1_Name, 
                     Y2_Name, 
                     Y3_Name, 
-                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})'
+                    Y4_Name, # NEW
+                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})',
+                    f'So sánh Tuyệt đối ({Y4_Name} vs {Y3_Name})' # NEW
                 ]
                 
-                st.markdown(f"##### Bảng tính Chỉ số Hoạt động ({Y1_Name} - {Y3_Name})")
+                st.markdown(f"##### Bảng tính Chỉ số Hoạt động ({Y1_Name} - {Y4_Name})") # Updated Title
                 
                 # Định dạng tùy chỉnh cho các chỉ tiêu: Tỷ lệ (chỉ số)
                 st.dataframe(df_inv_display.style.apply(highlight_financial_items, axis=1).format({
                     Y1_Name: format_vn_delta_ratio, # Tỷ lệ 2 thập phân cho Lần/Ngày
                     Y2_Name: format_vn_delta_ratio, 
                     Y3_Name: format_vn_delta_ratio,
-                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio # Delta Lần/Ngày
+                    Y4_Name: format_vn_delta_ratio, # NEW
+                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio, # Delta Lần/Ngày
+                    f'So sánh Tuyệt đối ({Y4_Name} vs {Y3_Name})': format_vn_delta_ratio # NEW
                 }), use_container_width=True, hide_index=True)
                 
                 inv_context = df_inventory_ratios_processed.to_markdown(index=False)
@@ -826,8 +877,9 @@ if uploaded_file is not None:
             if not df_combined_key_ratios.empty:
                 df_ratios_final_display = df_combined_key_ratios.copy()
                 
-                # SỬA: Bao gồm cột Năm 3 (kỳ gần nhất)
-                cols_to_display = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'S.S Tuyệt đối (Y2 vs Y1)']
+                # SỬA: Bao gồm cột Năm 4 (kỳ gần nhất) và so sánh Y4 vs Y3
+                cols_to_display = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'Năm 4', 
+                                   'S.S Tuyệt đối (Y2 vs Y1)', 'S.S Tuyệt đối (Y4 vs Y3)'] # Added Y4 and Y4 vs Y3 comparison
                 df_ratios_final_display = df_ratios_final_display[cols_to_display]
                 
                 # SỬA: Cập nhật tên cột hiển thị
@@ -835,18 +887,22 @@ if uploaded_file is not None:
                     'Chỉ tiêu', 
                     Y1_Name, 
                     Y2_Name, 
-                    Y3_Name, # ĐÃ THÊM: Năm 3 (kỳ gần nhất)
-                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})'
+                    Y3_Name, 
+                    Y4_Name, # NEW
+                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})',
+                    f'So sánh Tuyệt đối ({Y4_Name} vs {Y3_Name})' # NEW
                 ]
                 
-                st.markdown(f"##### Bảng tính Chỉ số Thanh toán và Cấu trúc Vốn ({Y1_Name} - {Y3_Name})") # Sửa tiêu đề
+                st.markdown(f"##### Bảng tính Chỉ số Thanh toán và Cấu trúc Vốn ({Y1_Name} - {Y4_Name})") # Sửa tiêu đề
 
-                # SỬA: Thêm định dạng cho cột Y3_Name
+                # SỬA: Thêm định dạng cho cột Y4_Name và so sánh Y4 vs Y3
                 st.dataframe(df_ratios_final_display.style.apply(highlight_financial_items, axis=1).format({
                     Y1_Name: format_vn_delta_ratio, # Tỷ lệ 2 thập phân
                     Y2_Name: format_vn_delta_ratio, # Tỷ lệ 2 thập phân
-                    Y3_Name: format_vn_delta_ratio, # ĐÃ THÊM: Tỷ lệ 2 thập phân
-                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio # Delta Tỷ lệ
+                    Y3_Name: format_vn_delta_ratio,
+                    Y4_Name: format_vn_delta_ratio, # NEW
+                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio, # Delta Tỷ lệ
+                    f'So sánh Tuyệt đối ({Y4_Name} vs {Y3_Name})': format_vn_delta_ratio # NEW
                 }), use_container_width=True, hide_index=True)
                 
                 # Context chỉ chứa các chỉ số Thanh toán và Cấu trúc vốn
@@ -882,7 +938,7 @@ if uploaded_file is not None:
             
             # Cập nhật tin nhắn chào mừng
             if st.session_state.messages[0]["content"].startswith("Xin chào!") or st.session_state.messages[0]["content"].startswith("Phân tích"):
-                       st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí, **các chỉ số thanh toán**, **hiệu quả sử dụng hàng tồn kho**, và **cấu trúc vốn/hệ số nợ** của báo cáo này."
+                       st.session_state.messages[0]["content"] = f"Phân tích 4 kỳ ({Y1_Name} đến {Y4_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí, **các chỉ số thanh toán**, **hiệu quả sử dụng hàng tồn kho**, và **cấu trúc vốn/hệ số nợ** của báo cáo này."
 
             # -----------------------------------------------------
             # MỤC 8 LÀ KHUNG CHATBOT (Thay thế Mục 9 cũ)
