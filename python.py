@@ -213,94 +213,58 @@ if uploaded_file is not None:
             
         # Đọc Sheet 2 cho Báo cáo Kết quả Kinh doanh (KQKD)
         # === [V3] THAY ĐỔI LOGIC ĐỌC FILE ===
-        # Bỏ qua việc đọc sheet 2, vì chúng ta giả định dữ liệu bị xếp chồng
-        # try:
-        #     df_raw_is = xls.parse(xls.sheet_names[1], header=0)
-        #     df_raw_is = clean_column_names(df_raw_is) # CHUẨN HÓA CỘT KQKD
-        # except Exception:
-        #     # Nếu không tìm thấy sheet 2, tạo DataFrame rỗng
-        #     df_raw_is = pd.DataFrame()
-        #     st.warning("Không tìm thấy Sheet 2 (Báo cáo KQKD). Chỉ phân tích Bảng CĐKT.")
-        
-        # === [V3] LOGIC MỚI: TÁCH SHEET 1 THÀNH 2 DATAFRAME (BĐKT VÀ KQKD) ===
         st.info("Đang xử lý file... Giả định BĐKT và KQKD nằm chung 1 sheet.")
         
         # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' (từ df_raw_bs đã đọc)
         df_raw_full = df_raw_bs.rename(columns={df_raw_bs.columns[0]: 'Chỉ tiêu'})
         
         # 2. Tìm điểm chia (index của hàng chứa 'KẾT QUẢ HOẠT ĐỘNG KINH DOANH')
-        # Chúng ta tìm từ khóa trong cột 'Chỉ tiêu'
         split_keyword = "KẾT QUẢ HOẠT ĐỘNG KINH DOANH"
         
         # === [V4] CẢI THIỆN TÍNH LINH HOẠT KHI TÌM KIẾM TỪ KHÓA ===
-        # Kết hợp cột 'Chỉ tiêu' (cột 0) và cột 1 để tìm kiếm, vì từ khóa có thể bị dịch chuyển
         df_raw_full['Chỉ tiêu'] = df_raw_full['Chỉ tiêu'].astype(str)
-        # Đảm bảo cột 1 tồn tại và là chuỗi
         if len(df_raw_full.columns) > 1:
-             # Tạo một cột tìm kiếm tạm thời bằng cách nối cột 'Chỉ tiêu' và cột 1
              search_col = df_raw_full['Chỉ tiêu'] + ' ' + df_raw_full[df_raw_full.columns[1]].astype(str)
         else:
              search_col = df_raw_full['Chỉ tiêu']
         
-        
-        # Tìm tất cả các hàng chứa từ khóa (có thể có nhiều)
-        # split_rows = df_raw_full[df_raw_full['Chỉ tiêu'].str.contains(split_keyword, case=False, na=False)]
         split_rows = df_raw_full[search_col.str.contains(split_keyword, case=False, na=False)]
         # === KẾT THÚC [V4] ===
         
         if split_rows.empty:
-            # Nếu không tìm thấy từ khóa, toàn bộ file là BĐKT, KQKD rỗng
             st.warning(f"Không tìm thấy từ khóa '{split_keyword}' trong Sheet 1. Chỉ phân tích Bảng CĐKT.")
             df_raw_bs = df_raw_full.copy()
             df_raw_is = pd.DataFrame()
         else:
-            # Lấy index của hàng đầu tiên chứa từ khóa
             split_index = split_rows.index[0]
             
             # Tách DataFrame
-            # BĐKT là mọi thứ *trước* hàng chứa từ khóa
             df_raw_bs = df_raw_full.loc[:split_index-1].copy()
-            
-            # KQKD là mọi thứ *từ* hàng chứa từ khóa trở đi
             df_raw_is = df_raw_full.loc[split_index:].copy()
             
-            # Reset lại header cho Báo cáo KQKD (vì nó có thể có header riêng)
-            # Chúng ta cần tìm hàng "CHỈ TIÊU" trong df_raw_is
+            # Reset lại header cho Báo cáo KQKD 
             
             # === [V6] CẢI TIẾN LOGIC TÌM KIẾM VÀ GÁN HEADER LINH HOẠT HƠN ===
-            # Tìm kiếm 'CHỈ TIÊU' trong mọi cột (dùng apply để tìm kiếm hàng)
-            # Chuyển df_raw_is sang kiểu chuỗi để tìm kiếm
             df_is_str = df_raw_is.apply(lambda col: col.astype(str))
-            
-            # Tạo mask: kiểm tra xem có ô nào trong hàng chứa 'CHỈ TIÊU' hay không
             keyword = "CHỈ TIÊU"
             header_mask = df_is_str.apply(lambda row: row.str.contains(keyword, case=False, na=False).any(), axis=1)
-            
             header_rows = df_raw_is[header_mask]
             
             if header_rows.empty:
-                 # Nếu không tìm thấy dòng header "CHỈ TIÊU", giả định KQKD bị lỗi hoặc không có cấu trúc chuẩn
                 st.warning("Không tìm thấy dòng header 'CHỈ TIÊU' trong phần KQKD. Bỏ qua phân tích KQKD.")
                 df_raw_is = pd.DataFrame()
             else:
                 header_row_index = header_rows.index[0]
-                
-                # Lấy tên cột mới từ hàng đó
                 new_header = df_raw_is.loc[header_row_index] 
                 df_raw_is = df_raw_is.loc[header_row_index+1:] # Bỏ hàng header
                 
-                # CHÚ Ý: Nếu df_raw_is chỉ có 1 hàng (header) thì sau bước này nó sẽ rỗng. 
                 if df_raw_is.empty:
                     st.warning("Phần KQKD chỉ có duy nhất dòng header 'CHỈ TIÊU' và không có dữ liệu. Bỏ qua phân tích KQKD.")
                     df_raw_is = pd.DataFrame()
                 else:
                     df_raw_is.columns = new_header
-                    # Đặt lại tên cột 'Chỉ tiêu' (vì nó có thể bị thay đổi)
-                    # Nếu cột đầu tiên của new_header là NaN, chúng ta giữ nguyên tên cũ (thường là 'Chỉ tiêu')
                     col_to_rename = df_raw_is.columns[0]
                     if pd.isna(col_to_rename) or str(col_to_rename).strip() == '':
-                         # Nếu cột đầu tiên bị NaN hoặc rỗng, ta tìm cột nào chứa 'CHỈ TIÊU' để thay thế tên
-                         # Tuy nhiên, cách an toàn nhất là dựa vào vị trí, nên ta chỉ đổi tên cột đầu tiên thành 'Chỉ tiêu'
                          df_raw_is.rename(columns={col_to_rename: 'Chỉ tiêu'}, inplace=True)
                     else:
                         df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
@@ -309,60 +273,44 @@ if uploaded_file is not None:
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ---
         
         # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' 
-        # (Đã thực hiện ở trên, nhưng kiểm tra lại cho chắc)
         df_raw_bs = df_raw_bs.rename(columns={df_raw_bs.columns[0]: 'Chỉ tiêu'})
         if not df_raw_is.empty:
             # === [V7] CHUẨN HÓA TÊN CỘT TRONG DF_RAW_IS TRƯỚC KHI LỌC ===
-            # Đảm bảo các cột trong KQKD có tên dạng string để có thể so sánh được với col_nam_X
             df_raw_is.columns = [str(col) for col in df_raw_is.columns]
-            df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
             # === KẾT THÚC [V7] ===
-        # === KẾT THÚC [V3] ===
         
-        # 2. Xác định cột năm/kỳ gần nhất ('Năm 3'), 'Năm 2', 'Năm 1'
         
-        # TÌM KIẾM CỘT NGÀY THÁNG LINH HOẠT TRONG BẢNG CĐKT (Sheet 1)
+        # 2. Xác định cột năm/kỳ gần nhất ('Năm 3'), 'Năm 2', 'Năm 1' (Logic này không đổi)
         value_cols_unique = {} 
         col_name_map = {} 
-
         for col in df_raw_bs.columns:
             col_str = str(col)
-            
-            # Hàm phụ để chuẩn hóa tên cột (chỉ giữ lại YYYY-MM-DD)
             def normalize_date_col(name):
-                # Loại bỏ phần giờ nếu có
-                if ' ' in name:
-                    name = name.split(' ')[0]
+                if ' ' in name: name = name.split(' ')[0]
                 return name
             
             normalized_name = normalize_date_col(col_str)
             
-            # Kiểm tra nếu tên chuẩn hóa là ngày tháng (ví dụ: '2023-12-31')
             if len(normalized_name) >= 10 and normalized_name[4] == '-' and normalized_name[7] == '-' and normalized_name[:4].isdigit():
-                 # Nếu tên ngày tháng (normalized_name) chưa có trong dict, thêm cột gốc (col) vào
                  if normalized_name not in value_cols_unique:
-                    value_cols_unique[normalized_name] = col # normalized_name (YYYY-MM-DD)
-                    col_name_map[normalized_name] = col_str # LƯU TÊN CỘT GỐC (KÈM GIỜ/DATETIME)
-            # Hoặc tìm các cột có tên là năm đơn thuần (VD: 2023)
+                    value_cols_unique[normalized_name] = col 
+                    col_name_map[normalized_name] = col_str 
             elif normalized_name.isdigit() and len(normalized_name) == 4 and normalized_name.startswith('20'):
                  if normalized_name not in value_cols_unique:
                     value_cols_unique[normalized_name] = col
                     col_name_map[normalized_name] = col_str 
 
-        # Lấy danh sách các tên chuẩn hóa không trùng lặp (Key của dictionary)
         normalized_names = list(value_cols_unique.keys())
         
-        if len(normalized_names) < 3: # Yêu cầu 3 năm để tính toán 2 chu kỳ
+        if len(normalized_names) < 3: 
             st.warning(f"Chỉ tìm thấy {len(normalized_names)} cột năm trong Sheet 1 (Bảng CĐKT). Ứng dụng cần ít nhất 3 năm/kỳ để so sánh.")
             st.stop()
             
-        # Chọn 3 tên chuẩn hóa gần nhất (Sắp xếp theo tên chuẩn hóa/ngày tháng, mới nhất lên đầu)
         normalized_names.sort(key=lambda x: str(x), reverse=True)
         
-        # LẤY TÊN CỘT GỐC TỪ MAP ĐỂ DÙNG LỌC DF
-        col_nam_3 = col_name_map[normalized_names[0]] # Newest (Năm 3)
-        col_nam_2 = col_name_map[normalized_names[1]] # Middle (Năm 2)
-        col_nam_1 = col_name_map[normalized_names[2]] # Oldest (Năm 1)
+        col_nam_3 = col_name_map[normalized_names[0]] 
+        col_nam_2 = col_name_map[normalized_names[1]] 
+        col_nam_1 = col_name_map[normalized_names[2]] 
         
         
         # 3. Lọc bỏ hàng đầu tiên chứa các chỉ số so sánh (SS) không cần thiết
@@ -370,21 +318,38 @@ if uploaded_file is not None:
         if not df_raw_bs.empty and len(df_raw_bs) > 1:
             df_raw_bs = df_raw_bs.drop(df_raw_bs.index[0])
         
-        # === [V8] LOẠI BỎ CÁC HÀNG TRỐNG/NAN TRONG CỘT 'CHỈ TIÊU' CỦA KQKD ===
+        # === [V10] LOGIC MỚI: ĐIỀN CHỈ TIÊU (FILL FOR INDENTATION) ===
         if not df_raw_is.empty:
-            # Loại bỏ các hàng mà cột 'Chỉ tiêu' là NaN hoặc rỗng sau khi đã gán header
-            df_raw_is['Chỉ tiêu'] = df_raw_is['Chỉ tiêu'].astype(str).str.strip()
-            df_raw_is = df_raw_is[df_raw_is['Chỉ tiêu'].str.len() > 0].copy()
-            # Đôi khi có dòng chỉ là "," hoặc "-", ta cũng loại bỏ
-            df_raw_is = df_raw_is[~df_raw_is['Chỉ tiêu'].isin(['-', ','])].copy()
+            # Lấy tên cột dữ liệu năm đầu tiên đã được xác định 
+            first_data_col = col_nam_1 
             
-            # Cần drop thêm một hàng nếu nó vẫn là hàng so sánh trống
-            if not df_raw_is.empty and len(df_raw_is) > 1:
-                # Kiểm tra hàng đầu tiên có phải là hàng chú thích trống không (dòng SS)
-                first_row_text = df_raw_is.iloc[0]['Chỉ tiêu']
-                if first_row_text is None or str(first_row_text).strip() == '':
-                    df_raw_is = df_raw_is.drop(df_raw_is.index[0])
-        # === KẾT THÚC [V8] ===
+            if 'Chỉ tiêu' in df_raw_is.columns and len(df_raw_is.columns) > 1:
+                # Cột 1 là cột ngay sau 'Chỉ tiêu'
+                second_col_name = df_raw_is.columns[1]
+                
+                # BƯỚC 1: HỢP NHẤT TÊN CHỈ TIÊU BỊ DỊCH CHUYỂN
+                # Nếu cột 'Chỉ tiêu' là NaN hoặc rỗng, dùng giá trị ở cột thứ 2 (nơi chứa tên chỉ tiêu bị thụt vào)
+                df_raw_is['Chỉ tiêu'] = df_raw_is.apply(
+                    lambda row: row[second_col_name] if pd.isna(row['Chỉ tiêu']) or str(row['Chỉ tiêu']).strip() == '' else row['Chỉ tiêu'], 
+                    axis=1
+                )
+                # BƯỚC 2: CHUẨN HÓA VÀ LOẠI BỎ HÀNG KHÔNG CÓ TÊN CHỈ TIÊU HỢP LỆ
+                df_raw_is['Chỉ tiêu'] = df_raw_is['Chỉ tiêu'].astype(str).str.strip()
+                df_raw_is = df_raw_is[df_raw_is['Chỉ tiêu'].str.len() > 0].copy()
+                
+            # BƯỚC 3: LOẠI BỎ CÁC HÀNG CHÚ THÍCH (VẪN CÓ THỂ LÀ NaN ở cột dữ liệu) - Dùng logic V9
+            if first_data_col in df_raw_is.columns:
+                df_raw_is[first_data_col] = pd.to_numeric(df_raw_is[first_data_col], errors='coerce')
+                # Chỉ giữ lại các hàng mà cột dữ liệu năm đầu tiên CÓ GIÁ TRỊ (không phải NaN)
+                df_raw_is = df_raw_is[df_raw_is[first_data_col].notnull()].copy()
+                
+                # Loại bỏ các hàng mà cột chỉ tiêu chỉ là '0'
+                df_raw_is = df_raw_is[df_raw_is['Chỉ tiêu'].astype(str) != '0'].copy()
+
+            else:
+                st.warning(f"Lỗi: Không tìm thấy cột dữ liệu đầu tiên '{first_data_col}' trong KQKD để làm sạch. Bỏ qua phân tích KQKD.")
+                df_raw_is = pd.DataFrame()
+        # === KẾT THÚC [V10] ===
 
         
         # 4. Tạo DataFrame Bảng CĐKT và KQKD đã lọc (chỉ giữ lại 4 cột)
