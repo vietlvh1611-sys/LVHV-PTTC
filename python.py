@@ -220,7 +220,7 @@ def process_financial_data(df_balance_sheet, df_income_statement):
         df_ratios['S.S Tương đối (%) (Y2 vs Y1)'] = df_ratios['Năm 2'] - df_ratios['Năm 1']
         
     # -----------------------------------------------------------------
-    # [V18] PHẦN 4: TÍNH CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG
+    # PHẦN 4: TÍNH CÁC CHỈ SỐ TÀI CHÍNH QUAN TRỌNG
     # -----------------------------------------------------------------
     
     # --- HÀM HỖ TRỢ TÌM GIÁ TRỊ CỦA CHỈ TIÊU (Tài sản, Nợ, Vốn...) ---
@@ -246,7 +246,7 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     # Báo cáo KQKD
     data['DT_THUAN'] = {y: get_value(df_is, 'Doanh thu thuần về bán hàng', y) for y in years}
     data['LN_SAU_THUE'] = {y: get_value(df_is, 'Lợi nhuận sau thuế TNDN', y) for y in years}
-    data['GVHB'] = {y: get_value(df_is, 'Giá vốn hàng bán', y) for y in years} # [V19] Bổ sung GVHB
+    data['GVHB'] = {y: get_value(df_is, 'Giá vốn hàng bán', y) for y in years} # Sử dụng GVHB
     
     # --- TÍNH TOÁN CÁC CHỈ SỐ ---
     def safe_div(numerator, denominator):
@@ -510,7 +510,13 @@ if uploaded_file is not None:
             split_index = split_rows.index[0]
             
             # Tách DataFrame
-            df_raw_bs = df_raw_full.loc[:split_index-1].copy()
+            # [V21] Sửa lỗi nếu split_index = 0, loc[: -1] trả về rỗng, gây lỗi sau.
+            # Dùng loc[:split_index] để bao gồm cả hàng cuối cùng nếu cần, nhưng BĐKT kết thúc ngay trước KQKD
+            if split_index > 0:
+                df_raw_bs = df_raw_full.loc[:split_index-1].copy()
+            else:
+                df_raw_bs = pd.DataFrame(columns=df_raw_full.columns) # BĐKT rỗng
+                
             df_raw_is = df_raw_full.loc[split_index:].copy()
             
             # Reset lại header cho Báo cáo KQKD 
@@ -541,7 +547,10 @@ if uploaded_file is not None:
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ---
         
         # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' 
-        df_raw_bs = df_raw_bs.rename(columns={df_raw_bs.columns[0]: 'Chỉ tiêu'})
+        # [V21] FIX: Gán tên cột sau khi tách, và chỉ gán khi DF không rỗng
+        if not df_raw_bs.empty and df_raw_bs.columns[0] != 'Chỉ tiêu':
+            df_raw_bs = df_raw_bs.rename(columns={df_raw_bs.columns[0]: 'Chỉ tiêu'})
+            
         if not df_raw_is.empty:
             df_raw_is.columns = [str(col) for col in df_raw_is.columns]
         
@@ -617,9 +626,15 @@ if uploaded_file is not None:
         cols_to_keep = ['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]
 
         # Bảng CĐKT
-        df_bs_final = df_raw_bs[cols_to_keep].copy()
-        df_bs_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
-        df_bs_final = df_bs_final.dropna(subset=['Chỉ tiêu'])
+        # [V21] FIX: Bắt lỗi KeyError nếu cột 'Chỉ tiêu' bị mất do DF rỗng/lỗi
+        try:
+            df_bs_final = df_raw_bs[cols_to_keep].copy()
+            df_bs_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
+            df_bs_final = df_bs_final.dropna(subset=['Chỉ tiêu'])
+        except KeyError as ke:
+             st.warning(f"Lỗi truy cập cột: {ke}. BĐKT có thể rỗng hoặc bị mất cột 'Chỉ tiêu'. Khởi tạo BĐKT rỗng.")
+             df_bs_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+        
 
         # Báo cáo KQKD
         if not df_raw_is.empty:
@@ -640,7 +655,6 @@ if uploaded_file is not None:
 
 
         # Xử lý dữ liệu
-        # CẬP NHẬT: THÊM DF THỨ 4 CHO CHỈ SỐ TÀI CHÍNH
         df_bs_processed, df_is_processed, df_ratios_processed, df_financial_ratios_processed = process_financial_data(df_bs_final.copy(), df_is_final.copy())
 
         # === [V15] LỌC BỎ CÁC DÒNG CÓ TẤT CẢ GIÁ TRỊ NĂM BẰNG 0 ===
@@ -659,7 +673,7 @@ if uploaded_file is not None:
         # === KẾT THÚC [V15] ===
 
 
-        if df_bs_processed is not None:
+        if not df_bs_processed.empty:
             
             # -----------------------------------------------------
             # CHUẨN HÓA TÊN CỘT ĐỂ HIỂN THỊ (DD/MM/YYYY hoặc YYYY)
@@ -895,7 +909,9 @@ if uploaded_file is not None:
         st.error(f"Lỗi cấu trúc dữ liệu: {ve}")
         st.session_state.data_for_chat = None # Reset chat context
     except Exception as e:
-        st.error(f"Có lỗi xảy ra khi đọc hoặc xử lý file: {e}.")
+        # [V21] FIX: Chỉ hiển thị lỗi khi không phải do DF rỗng.
+        if "empty" not in str(e) and "columns" not in str(e) and "cannot index" not in str(e):
+             st.error(f"Có lỗi xảy ra khi đọc hoặc xử lý file: {e}.")
         st.session_state.data_for_chat = None # Reset chat context
 
 else:
