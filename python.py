@@ -183,15 +183,31 @@ if uploaded_file is not None:
         # 2. Xác định cột năm gần nhất ('Năm 3'), 'Năm 2', 'Năm 1'
         
         # TÌM KIẾM CỘT NGÀY THÁNG LINH HOẠT
-        value_cols = []
+        value_cols_unique = {} # Dùng dictionary để đảm bảo key (giá trị ngày) là duy nhất
         for col in df_raw.columns:
             col_str = str(col)
-            # Tìm kiếm các chuỗi có dạng ngày tháng yyyy-mm-dd (VD: 2023-12-31)
-            if len(col_str) >= 10 and col_str[4] == '-' and col_str[7] == '-' and col_str[:4].isdigit():
-                 value_cols.append(col)
+            
+            # Hàm phụ để chuẩn hóa tên cột (loại bỏ giờ và định dạng YYYY-MM-DD)
+            def normalize_date_col(name):
+                # Loại bỏ phần giờ nếu có
+                if ' ' in name:
+                    name = name.split(' ')[0]
+                return name
+            
+            normalized_name = normalize_date_col(col_str)
+            
+            # Kiểm tra nếu tên chuẩn hóa là ngày tháng (ví dụ: '2023-12-31')
+            if len(normalized_name) >= 10 and normalized_name[4] == '-' and normalized_name[7] == '-' and normalized_name[:4].isdigit():
+                 # Nếu tên ngày tháng (normalized_name) chưa có trong dict, thêm cột gốc (col) vào
+                 if normalized_name not in value_cols_unique:
+                    value_cols_unique[normalized_name] = col
             # Hoặc tìm các cột có tên là năm đơn thuần (VD: 2023)
-            elif col_str.isdigit() and len(col_str) == 4 and col_str.startswith('20'):
-                 value_cols.append(col)
+            elif normalized_name.isdigit() and len(normalized_name) == 4 and normalized_name.startswith('20'):
+                 if normalized_name not in value_cols_unique:
+                    value_cols_unique[normalized_name] = col
+
+        # Lấy danh sách các cột gốc không trùng lặp (Value của dictionary)
+        value_cols = list(value_cols_unique.values())
         
         if len(value_cols) < 3: # Yêu cầu 3 năm để tính toán 2 chu kỳ
             st.warning(f"Chỉ tìm thấy {len(value_cols)} cột năm. Ứng dụng cần ít nhất 3 năm/kỳ để so sánh.")
