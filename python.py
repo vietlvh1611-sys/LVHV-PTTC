@@ -49,7 +49,7 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     tong_tai_san_row = df_bs[df_bs['Chỉ tiêu'].str.contains('TỔNG CỘNG TÀI SẢN|TỔNG CỘNG', case=False, na=False)]
     
     if tong_tai_san_row.empty:
-        raise ValueError("Không tìm thấy chỉ tiêu 'TỔNG CỘNG TÀI SẢN' hoặc 'TỔNG CỘNG' để tính tỷ trọng. Vui lòng kiểm tra tên chỉ tiêu trong file.")
+        raise ValueError("Không tìm thấy chỉ tiêu 'TỔNG CỘNG TÀI SẢN' hoặc 'TỔNG CỘNG' để tính tỷ trọng. Vui lòng kiểm tra tên chỉ tiêu trong sheet Bảng CĐKT.")
 
     tong_tai_san_N1 = tong_tai_san_row['Năm 1'].iloc[0]
     tong_tai_san_N2 = tong_tai_san_row['Năm 2'].iloc[0]
@@ -77,9 +77,6 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     # Y2 vs Y1 (2024 vs 2023)
     df_is['S.S Tuyệt đối (Y2 vs Y1)'] = df_is['Năm 2'] - df_is['Năm 1']
     df_is['S.S Tương đối (%) (Y2 vs Y1)'] = ((df_is['S.S Tuyệt đối (Y2 vs Y1)'] / df_is['Năm 1'].replace(0, 1e-9)) * 100)
-    
-    # Y3 vs Y2 (6T/2025 vs 2024) - Giữ lại cột Y3 để hiển thị
-    # Nếu muốn so sánh tăng trưởng, cần xử lý Chu kỳ 3 (6T) khác Chu kỳ 2 (12T), nhưng ở đây chỉ thực hiện so sánh thô.
     
     return df_bs, df_is
 
@@ -174,31 +171,44 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
 
 # --- Chức năng 1: Tải File ---
 uploaded_file = st.file_uploader(
-    "1. Tải file Excel/CSV Báo cáo Tài chính (Bảng CĐKT & KQKD - Tối thiểu 3 cột năm)",
-    type=['xlsx', 'xls', 'csv']
+    "1. Tải file Excel (Sheet 1: Bảng CĐKT, Sheet 2: KQKD - Tối thiểu 3 cột năm)",
+    type=['xlsx', 'xls'] # Chỉ cho phép Excel để xử lý nhiều sheet
 )
 
 if uploaded_file is not None:
     try:
-        # Xử lý file dựa trên định dạng
-        # Dùng header=0 để lấy tên cột là ngày tháng
-        if uploaded_file.name.endswith(('.xlsx', '.xls')):
-            df_raw = pd.read_excel(uploaded_file, header=0)
-        elif uploaded_file.name.endswith('.csv'):
-            df_raw = pd.read_csv(uploaded_file, header=0)
-        else:
-            raise Exception("Định dạng file không được hỗ trợ.")
+        
+        # --- ĐỌC DỮ LIỆU TỪ NHIỀU SHEET ---
+        # Đọc Sheet 1 (Bảng CĐKT) và Sheet 2 (KQKD)
+        xls = pd.ExcelFile(uploaded_file)
+        
+        # Đọc Sheet 1 cho Bảng CĐKT
+        try:
+            df_raw_bs = xls.parse(xls.sheet_names[0], header=0)
+        except:
+            raise Exception("Không thể đọc Sheet 1 (Bảng CĐKT). Vui lòng kiểm tra định dạng sheet.")
+            
+        # Đọc Sheet 2 cho Báo cáo Kết quả Kinh doanh (KQKD)
+        try:
+            df_raw_is = xls.parse(xls.sheet_names[1], header=0)
+        except:
+            # Nếu không tìm thấy sheet 2, tạo DataFrame rỗng
+            df_raw_is = pd.DataFrame()
+            st.warning("Không tìm thấy Sheet 2 (Báo cáo KQKD). Chỉ phân tích Bảng CĐKT.")
+
 
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ---
         
-        # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' (Dựa trên snippet 'KHOẢN MỤC')
-        df_raw = df_raw.rename(columns={df_raw.columns[0]: 'Chỉ tiêu'})
+        # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' 
+        df_raw_bs = df_raw_bs.rename(columns={df_raw_bs.columns[0]: 'Chỉ tiêu'})
+        if not df_raw_is.empty:
+            df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
         
         # 2. Xác định cột năm/kỳ gần nhất ('Năm 3'), 'Năm 2', 'Năm 1'
         
-        # TÌM KIẾM CỘT NGÀY THÁNG LINH HOẠT
+        # TÌM KIẾM CỘT NGÀY THÁNG LINH HOẠT TRONG BẢNG CĐKT (Sheet 1)
         value_cols_unique = {} # Dùng dictionary để đảm bảo key (giá trị ngày) là duy nhất
-        for col in df_raw.columns:
+        for col in df_raw_bs.columns:
             col_str = str(col)
             
             # Hàm phụ để chuẩn hóa tên cột (loại bỏ giờ và định dạng YYYY-MM-DD)
@@ -224,7 +234,7 @@ if uploaded_file is not None:
         value_cols = list(value_cols_unique.values())
         
         if len(value_cols) < 3: # Yêu cầu 3 năm để tính toán 2 chu kỳ
-            st.warning(f"Chỉ tìm thấy {len(value_cols)} cột năm. Ứng dụng cần ít nhất 3 năm/kỳ để so sánh.")
+            st.warning(f"Chỉ tìm thấy {len(value_cols)} cột năm trong Sheet 1 (Bảng CĐKT). Ứng dụng cần ít nhất 3 năm/kỳ để so sánh.")
             st.stop()
             
         # Chọn 3 cột năm gần nhất (Sắp xếp theo tên cột/ngày tháng, mới nhất (Y3) lên đầu)
@@ -234,51 +244,27 @@ if uploaded_file is not None:
         col_nam_2 = value_cols[1] # Middle (Năm 2)
         col_nam_1 = value_cols[2] # Oldest (Năm 1)
         
+        
         # 3. Lọc bỏ hàng đầu tiên chứa các chỉ số so sánh (SS) không cần thiết
-        df_raw = df_raw.drop(df_raw.index[0])
+        # Bảng CĐKT
+        if not df_raw_bs.empty and len(df_raw_bs) > 1:
+            df_raw_bs = df_raw_bs.drop(df_raw_bs.index[0])
+        # KQKD
+        if not df_raw_is.empty and len(df_raw_is) > 1:
+            df_raw_is = df_raw_is.drop(df_raw_is.index[0])
         
-        # 4. Tách Bảng cân đối Kế toán (Balance Sheet) và Báo cáo Kết quả Kinh doanh (Income Statement)
         
-        # TÌM KIẾM LINH HOẠT HƠN CHO BÁO CÁO KẾT QUẢ KINH DOANH
-        # Tìm dòng đầu tiên chứa một trong các chỉ tiêu chính của KQKD: 'Doanh thu', 'Lợi nhuận', 'CHỈ TIÊU'
-        is_keywords = ['Doanh thu', 'Lợi nhuận', 'CHỈ TIÊU']
-        income_statement_start_index = df_raw[
-            df_raw['Chỉ tiêu'].astype(str).str.contains('|'.join(is_keywords), case=False, na=False)
-        ].index
-        
-        if income_statement_start_index.empty:
-            st.warning("Không tìm thấy dòng 'Doanh thu', 'Lợi nhuận' hoặc 'CHỈ TIÊU' để phân tách Bảng Cân đối Kế toán và Kết quả Kinh doanh. Chỉ phân tích Bảng CĐKT.")
-            # Xử lý toàn bộ là Bảng CĐKT
-            df_balance_sheet_raw = df_raw.copy()
-            df_income_statement_raw = pd.DataFrame(columns=['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]) # DF rỗng
-            
-        else:
-            # Lấy index dòng bắt đầu phần Kết quả Kinh doanh (dòng đầu tiên chứa từ khóa)
-            is_start_idx = income_statement_start_index[0]
-            
-            # Bảng Cân đối Kế toán (từ đầu đến ngay trước dòng chứa từ khóa KQKD)
-            df_balance_sheet_raw = df_raw.loc[:is_start_idx-1].copy()
-            
-            # Báo cáo Kết quả Kinh doanh (từ dòng chứa từ khóa đến hết)
-            df_income_statement_raw = df_raw.loc[is_start_idx:].copy()
-            
-            # **LƯU Ý: Loại bỏ hàng phụ thứ 2 của KQKD nếu có (như hàng 'SS (+/-)')**
-            if not df_income_statement_raw.empty and len(df_income_statement_raw) > 0:
-                # Nếu hàng đầu tiên của KQKD có vẻ là hàng phụ (chứa NaN nhiều), ta xóa nó đi
-                if df_income_statement_raw.iloc[0].astype(str).str.contains('CHỈ TIÊU', case=False, na=False).any():
-                     # Nếu dòng đầu tiên là tiêu đề CHỈ TIÊU, ta bắt đầu từ dòng kế tiếp (is_start_idx+1)
-                     df_income_statement_raw = df_raw.loc[is_start_idx+1:].copy()
+        # 4. Tạo DataFrame Bảng CĐKT và KQKD đã lọc (chỉ giữ lại 4 cột)
 
-
-        # 5. Tạo DataFrame Bảng CĐKT (4 cột cần thiết)
-        df_bs_final = df_balance_sheet_raw[['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]].copy()
+        # Bảng CĐKT
+        df_bs_final = df_raw_bs[['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]].copy()
         df_bs_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
         df_bs_final = df_bs_final.dropna(subset=['Chỉ tiêu'])
 
-        # 6. Tạo DataFrame KQKD (4 cột cần thiết)
-        # Kiểm tra để tránh lỗi Key Error nếu KQKD không có đủ 4 cột
-        if not df_income_statement_raw.empty:
-            df_is_final = df_income_statement_raw[['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]].copy()
+        # Báo cáo KQKD
+        if not df_raw_is.empty:
+            # Lấy 3 cột năm đã xác định ở Bảng CĐKT
+            df_is_final = df_raw_is[['Chỉ tiêu', col_nam_1, col_nam_2, col_nam_3]].copy()
             df_is_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
             df_is_final = df_is_final.dropna(subset=['Chỉ tiêu'])
         else:
