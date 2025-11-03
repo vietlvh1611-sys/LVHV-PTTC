@@ -26,7 +26,8 @@ def format_vn_currency(val):
     if pd.isna(val) or (val == 0): 
         return "" 
     val = round(val)
-    return "{:,.0f}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
+    # [FIX] Đổi từ .0f sang d để định dạng số nguyên sau khi round()
+    return "{:,d}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
 
 def format_vn_percentage(val):
     # Định dạng tỷ lệ (1 chữ số thập phân), dot là ngàn, comma là thập phân. Ẩn 0.
@@ -40,7 +41,8 @@ def format_vn_delta_currency(val):
     if pd.isna(val):
         return ""
     val = round(val)
-    return "{:+, .0f}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
+    # [FIX] Đổi từ +, .0f sang +,d để định dạng số nguyên có dấu
+    return "{:+,d}".format(val).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
 
 def format_vn_delta_ratio(val):
     # Định dạng So sánh Tỷ lệ (có dấu +/-), 2 chữ số thập phân (cho độ chính xác khi so sánh). Giữ 0.
