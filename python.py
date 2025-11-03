@@ -103,7 +103,7 @@ def get_ai_analysis(data_for_ai, api_key):
         user_prompt = f"""
         {system_instruction_text}
         
-        Dữ liệu thô và chỉ số:
+        Dữ liệu thô và chỉ số:<br>
         {data_for_ai}
         """
 
@@ -318,38 +318,41 @@ if uploaded_file is not None:
         if not df_raw_bs.empty and len(df_raw_bs) > 1:
             df_raw_bs = df_raw_bs.drop(df_raw_bs.index[0])
         
-        # === [V10] LOGIC MỚI: ĐIỀN CHỈ TIÊU (FILL FOR INDENTATION) ===
+        # === [V11] CẬP NHẬT LOGIC: ĐIỀN CHỈ TIÊU (FILL FOR INDENTATION) LẤY TỪ CỘT 2 ===
         if not df_raw_is.empty:
             # Lấy tên cột dữ liệu năm đầu tiên đã được xác định 
             first_data_col = col_nam_1 
             
-            if 'Chỉ tiêu' in df_raw_is.columns and len(df_raw_is.columns) > 1:
-                # Cột 1 là cột ngay sau 'Chỉ tiêu'
-                second_col_name = df_raw_is.columns[1]
+            # Kiểm tra xem có đủ cột để thực hiện việc hợp nhất tên chỉ tiêu hay không
+            if 'Chỉ tiêu' in df_raw_is.columns and len(df_raw_is.columns) > 2:
+                # Cột thứ hai sau 'Chỉ tiêu' (index 2)
+                second_data_col_name = df_raw_is.columns[2]
                 
                 # BƯỚC 1: HỢP NHẤT TÊN CHỈ TIÊU BỊ DỊCH CHUYỂN
-                # Nếu cột 'Chỉ tiêu' là NaN hoặc rỗng, dùng giá trị ở cột thứ 2 (nơi chứa tên chỉ tiêu bị thụt vào)
+                # Nếu cột 'Chỉ tiêu' là NaN hoặc rỗng, dùng giá trị ở cột thứ 3 (nơi chứa tên chỉ tiêu bị thụt vào)
                 df_raw_is['Chỉ tiêu'] = df_raw_is.apply(
-                    lambda row: row[second_col_name] if pd.isna(row['Chỉ tiêu']) or str(row['Chỉ tiêu']).strip() == '' else row['Chỉ tiêu'], 
+                    lambda row: row[second_data_col_name] if pd.isna(row['Chỉ tiêu']) or str(row['Chỉ tiêu']).strip() == '' else row['Chỉ tiêu'], 
                     axis=1
                 )
-                # BƯỚC 2: CHUẨN HÓA VÀ LOẠI BỎ HÀNG KHÔNG CÓ TÊN CHỈ TIÊU HỢP LỆ
-                df_raw_is['Chỉ tiêu'] = df_raw_is['Chỉ tiêu'].astype(str).str.strip()
-                df_raw_is = df_raw_is[df_raw_is['Chỉ tiêu'].str.len() > 0].copy()
                 
-            # BƯỚC 3: LOẠI BỎ CÁC HÀNG CHÚ THÍCH (VẪN CÓ THỂ LÀ NaN ở cột dữ liệu) - Dùng logic V9
+            # BƯỚC 2: CHUẨN HÓA VÀ LOẠI BỎ HÀNG KHÔNG CÓ TÊN CHỈ TIÊU HỢP LỆ
+            df_raw_is['Chỉ tiêu'] = df_raw_is['Chỉ tiêu'].astype(str).str.strip()
+            df_raw_is = df_raw_is[df_raw_is['Chỉ tiêu'].str.len() > 0].copy()
+                
+            # BƯỚC 3: LOẠI BỎ CÁC HÀNG CHÚ THÍCH/RỖNG BẰNG CÁCH KIỂM TRA GIÁ TRỊ SỐ
             if first_data_col in df_raw_is.columns:
+                # Ép kiểu cột dữ liệu năm đầu tiên sang số
                 df_raw_is[first_data_col] = pd.to_numeric(df_raw_is[first_data_col], errors='coerce')
                 # Chỉ giữ lại các hàng mà cột dữ liệu năm đầu tiên CÓ GIÁ TRỊ (không phải NaN)
                 df_raw_is = df_raw_is[df_raw_is[first_data_col].notnull()].copy()
                 
-                # Loại bỏ các hàng mà cột chỉ tiêu chỉ là '0'
+                # Loại bỏ các hàng mà cột chỉ tiêu chỉ là '0' (chắc chắn là rác)
                 df_raw_is = df_raw_is[df_raw_is['Chỉ tiêu'].astype(str) != '0'].copy()
 
             else:
                 st.warning(f"Lỗi: Không tìm thấy cột dữ liệu đầu tiên '{first_data_col}' trong KQKD để làm sạch. Bỏ qua phân tích KQKD.")
                 df_raw_is = pd.DataFrame()
-        # === KẾT THÚC [V10] ===
+        # === KẾT THÚC [V11] ===
 
         
         # 4. Tạo DataFrame Bảng CĐKT và KQKD đã lọc (chỉ giữ lại 4 cột)
