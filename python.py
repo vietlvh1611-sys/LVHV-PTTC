@@ -266,14 +266,29 @@ if uploaded_file is not None:
             
             # Reset lại header cho Báo cáo KQKD (vì nó có thể có header riêng)
             # Chúng ta cần tìm hàng "CHỈ TIÊU" trong df_raw_is
-            header_row_index = df_raw_is[df_raw_is['Chỉ tiêu'].str.contains("CHỈ TIÊU", case=False, na=False)].index[0]
+            # === [V5] BẢO VỆ VỊ TRÍ TÌM KIẾM CHỈ TIÊU (CHỈ TÌM TỪ CỘT 0 VÀ KIỂM TRA RỖNG) ===
+            header_rows = df_raw_is[df_raw_is['Chỉ tiêu'].str.contains("CHỈ TIÊU", case=False, na=False)]
             
-            # Lấy tên cột mới từ hàng đó
-            new_header = df_raw_is.loc[header_row_index] 
-            df_raw_is = df_raw_is.loc[header_row_index+1:] # Bỏ hàng header
-            df_raw_is.columns = new_header
-            # Đặt lại tên cột 'Chỉ tiêu' (vì nó có thể bị thay đổi)
-            df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
+            if header_rows.empty:
+                 # Nếu không tìm thấy dòng header "CHỈ TIÊU", giả định KQKD bị lỗi hoặc không có cấu trúc chuẩn
+                st.warning("Không tìm thấy dòng header 'CHỈ TIÊU' trong phần KQKD. Bỏ qua phân tích KQKD.")
+                df_raw_is = pd.DataFrame()
+            else:
+                header_row_index = header_rows.index[0]
+                
+                # Lấy tên cột mới từ hàng đó
+                new_header = df_raw_is.loc[header_row_index] 
+                df_raw_is = df_raw_is.loc[header_row_index+1:] # Bỏ hàng header
+                
+                # CHÚ Ý: Nếu df_raw_is chỉ có 1 hàng (header) thì sau bước này nó sẽ rỗng. 
+                if df_raw_is.empty:
+                    st.warning("Phần KQKD chỉ có duy nhất dòng header 'CHỈ TIÊU' và không có dữ liệu. Bỏ qua phân tích KQKD.")
+                    df_raw_is = pd.DataFrame()
+                else:
+                    df_raw_is.columns = new_header
+                    # Đặt lại tên cột 'Chỉ tiêu' (vì nó có thể bị thay đổi)
+                    df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
+            # === KẾT THÚC [V5] ===
 
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ---
         
