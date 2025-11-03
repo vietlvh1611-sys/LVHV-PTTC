@@ -2,9 +2,8 @@ import streamlit as st
 import pandas as pd
 from google import genai
 from google.genai.errors import APIError
-# ĐÃ SỬA LỖI: Loại bỏ import GenerationConfig và SystemInstruction
-# from google.genai.types import GenerationConfig 
-# from google.genai.types import SystemInstruction
+# ĐÃ SỬA LỖI: Loại bỏ import GenerationConfig và SystemInstruction để tránh lỗi Pydantic
+# Tương thích cao nhất: System Instruction được truyền bằng cách ghép vào User Prompt
 
 # --- Khởi tạo State cho Chatbot và Dữ liệu ---
 # Lưu trữ lịch sử chat
@@ -30,7 +29,7 @@ def process_financial_data(df):
     # Đảm bảo các giá trị là số để tính toán
     numeric_cols = ['Năm trước', 'Năm sau']
     for col in numeric_cols:
-        # Sử dụng df[col] = df[col]... thay vì df[col] = pd.to_numeric(col... như lỗi trước đó
+        # Chuyển đổi sang dạng số, thay thế lỗi bằng 0
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     
     # 1. Tính Tốc độ Tăng trưởng
@@ -41,7 +40,6 @@ def process_financial_data(df):
 
     # 2. Tính Tỷ trọng theo Tổng Tài sản
     # Lọc chỉ tiêu "TỔNG CỘNG TÀI SẢN"
-    # LƯU Ý: Đảm bảo dữ liệu của bạn có dòng này (hoặc "Tài sản")
     tong_tai_san_row = df[df['Chỉ tiêu'].str.contains('TỔNG CỘNG TÀI SẢN', case=False, na=False)]
     
     if tong_tai_san_row.empty:
@@ -76,7 +74,7 @@ def get_ai_analysis(data_for_ai, api_key):
             "Đánh giá tập trung vào tốc độ tăng trưởng, thay đổi cơ cấu tài sản và khả năng thanh toán hiện hành."
         )
         
-        # SỬA LỖI: Ghép System Instruction vào đầu Prompt
+        # SỬA LỖI: Ghép System Instruction vào đầu Prompt để tương thích API
         user_prompt = f"""
         {system_instruction_text}
         
@@ -87,8 +85,7 @@ def get_ai_analysis(data_for_ai, api_key):
         # Truyền prompt duy nhất
         response = client.models.generate_content(
             model=model_name,
-            contents=user_prompt # Truyền toàn bộ dưới dạng prompt người dùng
-            # Loại bỏ tham số config
+            contents=user_prompt 
         )
         return response.text
 
@@ -124,11 +121,9 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
             gemini_history.append({"role": role, "parts": [{"text": msg["content"]}]})
         
         # 3. Ghép System Instruction và Prompt mới nhất vào Content cuối cùng
-        # Lấy Prompt mới nhất của người dùng
         last_user_prompt = prompt
         
         # Tạo prompt cuối cùng bằng cách ghép System Instruction, Context Data và Prompt người dùng
-        # Đây là phương pháp tương thích nhất
         final_prompt = f"""
         {system_instruction_text}
         
@@ -145,8 +140,7 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
         # 4. Gọi API
         response = client.models.generate_content(
             model=model_name,
-            contents=full_contents # Truyền lịch sử chat (user/model) + prompt cuối
-            # Loại bỏ tham số config
+            contents=full_contents 
         )
         return response.text
 
@@ -178,10 +172,8 @@ if uploaded_file is not None:
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ĐỂ PHÙ HỢP VỚI LOGIC CŨ ---
         
         # Hàng 1 (index 1) trong file gốc là hàng phụ (SS (+/-), SS (%)) nên ta xóa nó đi nếu nó đã bị đọc vào DF
-        # Nếu dùng header=0, hàng này sẽ trở thành hàng đầu tiên của dữ liệu
         
         # 1. Đặt tên cột đầu tiên là 'Chỉ tiêu' (Dựa trên snippet 'KHOẢN MỤC')
-        # Cột đầu tiên trong DF sau khi dùng header=0 là 'KHOẢN MỤC'
         df_raw = df_raw.rename(columns={df_raw.columns[0]: 'Chỉ tiêu'})
         
         # 2. Xác định cột năm gần nhất ('Năm sau') và năm trước đó ('Năm trước')
@@ -226,15 +218,35 @@ if uploaded_file is not None:
 
         if df_processed is not None:
             
-            # --- Chức năng 2 & 3: Hiển thị Kết quả ---
-            st.subheader("2. Tốc độ Tăng trưởng & 3. Tỷ trọng Cơ cấu Tài sản")
-            st.dataframe(df_processed.style.format({
-                'Năm trước': '{:,.0f}',
-                'Năm sau': '{:,.0f}',
-                'Tốc độ tăng trưởng (%)': '{:.2f}%',
-                'Tỷ trọng Năm trước (%)': '{:.2f}%',
-                'Tỷ trọng Năm sau (%)': '{:.2f}%'
-            }), use_container_width=True)
+            # --- Chức năng 2 & 3: Hiển thị Kết quả theo Tabs ---
+            st.subheader("2. Phân tích Tốc độ Tăng trưởng & 3. Phân tích Tỷ trọng Cơ cấu Tài sản")
+            
+            # Tạo các DataFrame con để hiển thị trong Tabs
+            df_growth = df_processed[['Chỉ tiêu', 'Năm trước', 'Năm sau', 'Tốc độ tăng trưởng (%)']].copy()
+            df_structure = df_processed[['Chỉ tiêu', 'Năm trước', 'Năm sau', 'Tỷ trọng Năm trước (%)', 'Tỷ trọng Năm sau (%)']].copy()
+            
+            # Đổi tên cột cho trực quan
+            df_growth.columns = ['Chỉ tiêu', 'Giá trị Năm trước', 'Giá trị Năm sau', 'Tốc độ tăng trưởng (%)']
+            df_structure.columns = ['Chỉ tiêu', 'Giá trị Năm trước', 'Giá trị Năm sau', 'Tỷ trọng N-1 (%)', 'Tỷ trọng N (%)']
+
+            tab1, tab2 = st.tabs(["📈 Tốc độ Tăng trưởng", "🏗️ Tỷ trọng Cơ cấu"])
+            
+            with tab1:
+                st.markdown("##### Bảng phân tích Tốc độ Tăng trưởng (%)")
+                st.dataframe(df_growth.style.format({
+                    'Giá trị Năm trước': '{:,.0f}',
+                    'Giá trị Năm sau': '{:,.0f}',
+                    'Tốc độ tăng trưởng (%)': '{:.2f}%'
+                }), use_container_width=True, hide_index=True)
+                
+            with tab2:
+                st.markdown("##### Bảng phân tích Tỷ trọng Cơ cấu Tài sản (%)")
+                st.dataframe(df_structure.style.format({
+                    'Giá trị Năm trước': '{:,.0f}',
+                    'Giá trị Năm sau': '{:,.0f}',
+                    'Tỷ trọng N-1 (%)': '{:.2f}%',
+                    'Tỷ trọng N (%)': '{:.2f}%'
+                }), use_container_width=True, hide_index=True)
             
             # Khởi tạo giá trị mặc định cho chỉ số thanh toán
             thanh_toan_hien_hanh_N = "N/A"
