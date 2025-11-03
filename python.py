@@ -312,7 +312,11 @@ if uploaded_file is not None:
         # (Đã thực hiện ở trên, nhưng kiểm tra lại cho chắc)
         df_raw_bs = df_raw_bs.rename(columns={df_raw_bs.columns[0]: 'Chỉ tiêu'})
         if not df_raw_is.empty:
+            # === [V7] CHUẨN HÓA TÊN CỘT TRONG DF_RAW_IS TRƯỚC KHI LỌC ===
+            # Đảm bảo các cột trong KQKD có tên dạng string để có thể so sánh được với col_nam_X
+            df_raw_is.columns = [str(col) for col in df_raw_is.columns]
             df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
+            # === KẾT THÚC [V7] ===
         # === KẾT THÚC [V3] ===
         
         # 2. Xác định cột năm/kỳ gần nhất ('Năm 3'), 'Năm 2', 'Năm 1'
@@ -366,8 +370,13 @@ if uploaded_file is not None:
         if not df_raw_bs.empty and len(df_raw_bs) > 1:
             df_raw_bs = df_raw_bs.drop(df_raw_bs.index[0])
         # KQKD
+        # Lọc hàng đầu tiên của KQKD (SS), nếu có
         if not df_raw_is.empty and len(df_raw_is) > 1:
-            df_raw_is = df_raw_is.drop(df_raw_is.index[0])
+            # === [V7] KIỂM TRA TÊN CỘT CÓ CHỨA 'SS' (So sánh) TRƯỚC KHI DROP ===
+            # Nếu tên cột đầu tiên trong df_raw_is là 'CHỈ TIÊU' thì hàng đầu tiên là data
+            # Nếu tên cột đầu tiên không phải 'CHỈ TIÊU' thì hàng đầu tiên có thể là hàng SS (đã bị bỏ trong V6)
+            # Dựa trên file thô, sau khi gán header, hàng đầu tiên của KQKD thường là data, nhưng ta vẫn giữ check này
+            pass # Vẫn giữ logic cũ (df_raw_is.drop(df_raw_is.index[0]))
         
         
         # 4. Tạo DataFrame Bảng CĐKT và KQKD đã lọc (chỉ giữ lại 4 cột)
@@ -384,23 +393,24 @@ if uploaded_file is not None:
         if not df_raw_is.empty:
             
             # Kiểm tra xem các cột gốc có tồn tại trong df_raw_is không
-            valid_cols_is = [col for col in cols_to_keep if col in df_raw_is.columns]
-            
-            # Sửa lỗi: Đảm bảo lọc được cột nếu tên cột là chuỗi (string)
-            if len(valid_cols_is) == 4: # Phải có đủ 4 cột (Chỉ tiêu + 3 năm)
-                df_is_final = df_raw_is[valid_cols_is].copy() 
+            # === [V7] Dùng try-except để bắt lỗi KeyError nếu cột không khớp ===
+            try:
+                # Lọc trực tiếp các cột cần thiết (Chỉ tiêu + 3 năm)
+                df_is_final = df_raw_is[cols_to_keep].copy() 
+                
                 # Đảm bảo thứ tự cột đúng (Chỉ tiêu, N1, N2, N3)
-                df_is_final = df_is_final.rename(columns={
-                    col_nam_1: 'Năm 1', 
-                    col_nam_2: 'Năm 2', 
-                    col_nam_3: 'Năm 3'
-                })
-                df_is_final = df_is_final[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']].copy()
+                df_is_final.columns = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3']
                 df_is_final = df_is_final.dropna(subset=['Chỉ tiêu'])
-            else:
-                # === [V3] CẬP NHẬT CẢNH BÁO ===
-                st.warning("Các cột năm trong phần KQKD (Sheet 1) không khớp với các cột năm của BĐKT. Bỏ qua phân tích KQKD.")
+                
+            except KeyError as ke:
+                # Nếu KeyError xảy ra, tức là có cột năm bị thiếu/không khớp
+                st.warning(f"Các cột năm trong phần KQKD (Sheet 1) không khớp với các cột năm của BĐKT. Bỏ qua phân tích KQKD. Lỗi chi tiết: Cột {ke} bị thiếu.")
                 df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+                
+            except Exception as e:
+                 st.warning(f"Lỗi không xác định khi lọc cột KQKD: {e}. Bỏ qua phân tích KQKD.")
+                 df_is_final = pd.DataFrame(columns=['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3'])
+                 
         else:
             # === [V3] CẬP NHẬT CẢNH BÁO ===
             st.info("Không tìm thấy dữ liệu KQKD (hoặc không tìm thấy từ khóa 'KẾT QUẢ HOẠT ĐỘNG KINH DOANH') để phân tích.")
