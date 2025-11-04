@@ -745,6 +745,8 @@ if uploaded_file is not None:
             # CHỨC NĂNG 4: BÁO CÁO KẾT QUẢ HOẠT ĐỘNG KINH DOANH
             # -----------------------------------------------------
             st.subheader("4. Phân tích Kết quả hoạt động kinh doanh")
+            
+            is_context = "Không tìm thấy dữ liệu Báo cáo Kết quả hoạt động kinh doanh."
 
             if not df_is_processed.empty:
                 df_is_display = df_is_processed[['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 
@@ -772,10 +774,8 @@ if uploaded_file is not None:
                     f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': format_vn_percentage 
                 }), use_container_width=True, hide_index=True)
 
-                is_context = df_is_processed.to_markdown(index=False)
             else:
                 st.info("Không có dữ liệu Báo cáo Kết quả hoạt động kinh doanh để hiển thị.")
-                is_context = "Không tìm thấy dữ liệu Báo cáo Kết quả hoạt động kinh doanh."
 
             
             # -----------------------------------------------------
@@ -783,6 +783,8 @@ if uploaded_file is not None:
             # -----------------------------------------------------
             st.subheader("5. Tỷ trọng Chi phí/Doanh thu thuần (%)")
             
+            ratios_context = "Không tìm thấy dữ liệu Tỷ trọng Chi phí/Doanh thu thuần."
+
             if not df_ratios_processed.empty:
                 # Cột so sánh là Năm 2 vs Năm 1
                 df_ratios_display = df_ratios_processed.copy()
@@ -801,10 +803,8 @@ if uploaded_file is not None:
                     f'So sánh Tương đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio
                 }), use_container_width=True, hide_index=True)
                 
-                ratios_context = df_ratios_processed.to_markdown(index=False)
             else:
                 st.info("Không thể tính Tỷ trọng Chi phí/Doanh thu thuần do thiếu dữ liệu KQKD.")
-                ratios_context = "Không tìm thấy dữ liệu Tỷ trọng Chi phí/Doanh thu thuần."
             
             # -----------------------------------------------------
             # [CẬP NHẬT] CHỨC NĂNG 6: CÁC HỆ SỐ TÀI CHÍNH CHỦ CHỐT
@@ -812,6 +812,8 @@ if uploaded_file is not None:
             # -----------------------------------------------------
             st.subheader("6. Các Hệ số Tài chính Chủ chốt (Thanh toán, Hoạt động, Cấu trúc Vốn, Sinh lời) 🔑")
 
+            key_ratios_context = "Không tìm thấy dữ liệu Chỉ tiêu Tài chính Chủ chốt."
+            
             if not df_financial_ratios_processed.empty:
                 df_ratios_final_display = df_financial_ratios_processed.copy()
                 
@@ -843,26 +845,56 @@ if uploaded_file is not None:
                     f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio # Delta Tỷ lệ
                 }), use_container_width=True, hide_index=True)
                 
-                key_ratios_context = df_financial_ratios_processed.to_markdown(index=False)
             else:
                 st.info("Không thể tính các Chỉ số Tài chính Chủ chốt do thiếu dữ liệu.")
-                key_ratios_context = "Không tìm thấy dữ liệu Chỉ tiêu Tài chính Chủ chốt."
             
             # -----------------------------------------------------
-            # [CẬP NHẬT] CẬP NHẬT CONTEXT CHO CHATBOT 
+            # [CẬP NHẬT] CẬP NHẬT CONTEXT CHO CHATBOT (FIXED)
             # -----------------------------------------------------
+            
+            # Ánh xạ tên cột nội bộ ('Năm 1', 'Năm 2', 'Năm 3') sang tên kỳ báo cáo thực tế.
+            rename_map_years = {'Năm 1': Y1_Name, 'Năm 2': Y2_Name, 'Năm 3': Y3_Name}
+            
+            # 1. Chuẩn bị Bảng CĐKT Context (luôn có nếu đã chạy đến đây)
+            df_bs_context = df_bs_processed.copy().rename(columns=rename_map_years)
+            bs_context_md = df_bs_context.to_markdown(index=False)
+
+            # 2. Chuẩn bị KQKD Context
+            if not df_is_processed.empty:
+                df_is_context = df_is_processed.copy().rename(columns=rename_map_years)
+                is_context_md = df_is_context.to_markdown(index=False)
+            else:
+                is_context_md = "Không tìm thấy dữ liệu Báo cáo Kết quả hoạt động kinh doanh." # Mặc định cũ
+
+            # 3. Chuẩn bị Tỷ trọng Chi phí Context
+            if not df_ratios_processed.empty:
+                df_ratios_context = df_ratios_processed.copy().rename(columns=rename_map_years)
+                ratios_context_md = df_ratios_context.to_markdown(index=False)
+            else:
+                ratios_context_md = "Không tìm thấy dữ liệu Tỷ trọng Chi phí/Doanh thu thuần." # Mặc định cũ
+                
+            # 4. Chuẩn bị Chỉ số Tài chính Context
+            if not df_financial_ratios_processed.empty:
+                df_key_ratios_context = df_financial_ratios_processed.copy().rename(columns=rename_map_years)
+                key_ratios_context_md = df_key_ratios_context.to_markdown(index=False)
+            else:
+                 key_ratios_context_md = "Không tìm thấy dữ liệu Chỉ tiêu Tài chính Chủ chốt." # Mặc định cũ
+
+
             data_for_chat_context = f"""
+            **DỮ LIỆU TÀI CHÍNH ĐÃ XỬ LÝ (Kỳ: {Y1_Name}, {Y2_Name}, {Y3_Name}):**
+            
             **BẢNG CÂN ĐỐI KẾ TOÁN (Balance Sheet Analysis):**
-            {df_bs_processed.to_markdown(index=False)}
+            {bs_context_md}
             
             **BÁO CÁO KẾT QUẢ KINH DOANH (Income Statement Analysis):**
-            {is_context}
+            {is_context_md}
 
             **TỶ TRỌNG CHI PHÍ/DOANH THU THUẦN (%):**
-            {ratios_context}
+            {ratios_context_md}
             
             **CÁC HỆ SỐ TÀI CHÍNH CHỦ CHỐT (Thanh toán, Hoạt động, Cấu trúc Vốn, Sinh lời):**
-            {key_ratios_context}
+            {key_ratios_context_md}
             """
             st.session_state.data_for_chat = data_for_chat_context
             
