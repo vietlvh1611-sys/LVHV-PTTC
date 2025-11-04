@@ -770,10 +770,12 @@ if uploaded_file is not None:
 
             # -----------------------------------------------------------------
             # [SẮP XẾP LẠI & CẬP NHẬT] CHỨC NĂNG 8: TẢI BÁO CÁO PHÂN TÍCH (WORD)
-            # Ánh xạ: Y2 (2024) = Năm 3 (Excel), Y1 (2023) = Năm 2 (Excel)
+            # [FIX] Ánh xạ MỚI theo yêu cầu:
+            # Word 2024 ({{..._Y2}}) <- Excel 'Năm 2' (Y2_Name)
+            # Word 2023 (Delta)     <- Excel 'Năm 1' (Y1_Name)
             # -----------------------------------------------------------------
             st.subheader("8. Tải Báo cáo Phân tích (Word) 📝")
-            st.markdown(f"Chức năng này sẽ điền dữ liệu (Năm 2024={Y3_Name} và Năm 2023={Y2_Name}) vào file mẫu `Mau_BCTC_Template.docx` (sử dụng các thẻ `{{..._Y2}}` và `{{..._Y1}}`).")
+            st.markdown(f"**ĐÃ CẬP NHẬT:** Chức năng này sẽ điền dữ liệu (Năm={Y2_Name} và Năm={Y1_Name}) vào file mẫu `Mau_BCTC_Template.docx` (sử dụng các thẻ `{{..._Y2}}` và `{{..._Y1}}`).")
 
             if st.button("Tạo và Tải Báo cáo (Điền tự động)"):
                 with st.spinner("Đang tạo báo cáo Word..."):
@@ -782,7 +784,7 @@ if uploaded_file is not None:
                         doc = DocxTemplate("Mau_BCTC_Template.docx")
 
                         # 2. Tạo Context (Dữ liệu để điền)
-                        # ÁNH XẠ MỚI: Y2 = Năm 3 (2024), Y1 = Năm 2 (2023)
+                        # ÁNH XẠ MỚI: Y2 = Năm 2 (2023), Y1 = Năm 1 (2022)
                         
                         context = {
                             # (Các thẻ mô tả văn bản cần được thêm thủ công nếu muốn)
@@ -791,23 +793,23 @@ if uploaded_file is not None:
                         }
                         
                         # --- Phân tích Tài sản ---
-                        # Dùng 'Năm 3' cho Y2, 'Delta (Y3 vs Y2)' cho DELTA_Y2_Y1
-                        tts_y2 = get_report_value(df_bs_processed, 'TỔNG CỘNG TÀI SẢN', 'Năm 3')
-                        tts_delta_y2_y1 = get_report_value(df_bs_processed, 'TỔNG CỘNG TÀI SẢN', 'Delta (Y3 vs Y2)')
+                        # Dùng 'Năm 2' cho Y2, 'Delta (Y2 vs Y1)' cho DELTA_Y2_Y1
+                        tts_y2 = get_report_value(df_bs_processed, 'TỔNG CỘNG TÀI SẢN', 'Năm 2')
+                        tts_delta_y2_y1 = get_report_value(df_bs_processed, 'TỔNG CỘNG TÀI SẢN', 'Delta (Y2 vs Y1)')
                         context['TTS_Y2'] = format_report_number(tts_y2)
                         context['TTS_DELTA_Y2_Y1'] = format_report_number(tts_delta_y2_y1, is_delta=True)
                         
-                        tsnh_y2 = get_report_value(df_bs_processed, 'Tài sản ngắn hạn|TS ngắn hạn', 'Năm 3')
-                        tsnh_delta_y2_y1 = get_report_value(df_bs_processed, 'Tài sản ngắn hạn|TS ngắn hạn', 'Delta (Y3 vs Y2)')
-                        tsnh_growth_y2_y1 = get_report_value(df_bs_processed, 'Tài sản ngắn hạn|TS ngắn hạn', 'Growth (Y3 vs Y2)', unit_divisor=0)
+                        tsnh_y2 = get_report_value(df_bs_processed, 'Tài sản ngắn hạn|TS ngắn hạn', 'Năm 2')
+                        tsnh_delta_y2_y1 = get_report_value(df_bs_processed, 'Tài sản ngắn hạn|TS ngắn hạn', 'Delta (Y2 vs Y1)')
+                        tsnh_growth_y2_y1 = get_report_value(df_bs_processed, 'Tài sản ngắn hạn|TS ngắn hạn', 'Growth (Y2 vs Y1)', unit_divisor=0)
                         context['TSNH_Y2'] = format_report_number(tsnh_y2)
                         context['TSNH_DELTA_Y2_Y1'] = format_report_number(tsnh_delta_y2_y1, is_delta=True)
-                        context['TSNH_GROWTH_Y2_Y1'] = format_report_number(tsnh_growth_y2_y1)
+                        context['TSNH_GROWTH_Y2_Y1'] = format_report_number(tsnh_growth_y2_y1) # %
 
                         # Tiền
-                        tien_y2 = get_report_value(df_bs_processed, 'Tiền và các khoản tương đương tiền', 'Năm 3')
-                        tien_delta_y2_y1 = get_report_value(df_bs_processed, 'Tiền và các khoản tương đương tiền', 'Delta (Y3 vs Y2)')
-                        tien_growth_y2_y1 = get_report_value(df_bs_processed, 'Tiền và các khoản tương đương tiền', 'Growth (Y3 vs Y2)', unit_divisor=0)
+                        tien_y2 = get_report_value(df_bs_processed, 'Tiền và các khoản tương đương tiền', 'Năm 2')
+                        tien_delta_y2_y1 = get_report_value(df_bs_processed, 'Tiền và các khoản tương đương tiền', 'Delta (Y2 vs Y1)')
+                        tien_growth_y2_y1 = get_report_value(df_bs_processed, 'Tiền và các khoản tương đương tiền', 'Growth (Y2 vs Y1)', unit_divisor=0)
                         tien_ty_trong_tsnh_y2 = safe_div(tien_y2, tsnh_y2) * 100 if tsnh_y2 != 0 else 0
                         context['TIEN_Y2'] = format_report_number(tien_y2)
                         context['TIEN_DELTA_Y2_Y1'] = format_report_number(tien_delta_y2_y1, is_delta=True)
@@ -815,48 +817,48 @@ if uploaded_file is not None:
                         context['TIEN_TY_TRONG_TSNH_Y2'] = format_report_number(tien_ty_trong_tsnh_y2)
 
                         # Hàng tồn kho
-                        htk_y2 = get_report_value(df_bs_processed, 'Hàng tồn kho', 'Năm 3')
-                        htk_delta_y2_y1 = get_report_value(df_bs_processed, 'Hàng tồn kho', 'Delta (Y3 vs Y2)')
-                        htk_growth_y2_y1 = get_report_value(df_bs_processed, 'Hàng tồn kho', 'Growth (Y3 vs Y2)', unit_divisor=0)
+                        htk_y2 = get_report_value(df_bs_processed, 'Hàng tồn kho', 'Năm 2')
+                        htk_delta_y2_y1 = get_report_value(df_bs_processed, 'Hàng tồn kho', 'Delta (Y2 vs Y1)')
+                        htk_growth_y2_y1 = get_report_value(df_bs_processed, 'Hàng tồn kho', 'Growth (Y2 vs Y1)', unit_divisor=0)
                         context['HTK_Y2'] = format_report_number(htk_y2)
                         context['HTK_DELTA_Y2_Y1'] = format_report_number(htk_delta_y2_y1, is_delta=True)
                         context['HTK_GROWTH_Y2_Y1'] = format_report_number(htk_growth_y2_y1)
 
                         # --- Phân tích Nguồn vốn ---
                         # Nợ ngắn hạn
-                        nnh_y2 = get_report_value(df_bs_processed, 'Nợ ngắn hạn', 'Năm 3')
-                        nnh_delta_y2_y1 = get_report_value(df_bs_processed, 'Nợ ngắn hạn', 'Delta (Y3 vs Y2)')
-                        nnh_growth_y2_y1 = get_report_value(df_bs_processed, 'Nợ ngắn hạn', 'Growth (Y3 vs Y2)', unit_divisor=0)
+                        nnh_y2 = get_report_value(df_bs_processed, 'Nợ ngắn hạn', 'Năm 2')
+                        nnh_delta_y2_y1 = get_report_value(df_bs_processed, 'Nợ ngắn hạn', 'Delta (Y2 vs Y1)')
+                        nnh_growth_y2_y1 = get_report_value(df_bs_processed, 'Nợ ngắn hạn', 'Growth (Y2 vs Y1)', unit_divisor=0)
                         context['NNH_Y2'] = format_report_number(nnh_y2)
                         context['NNH_DELTA_Y2_Y1'] = format_report_number(nnh_delta_y2_y1, is_delta=True)
                         context['NNH_GROWTH_Y2_Y1'] = format_report_number(nnh_growth_y2_y1)
                         
                         # Vốn chủ sở hữu
-                        vcsh_y2 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Năm 3')
-                        vcsh_delta_y2_y1 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Delta (Y3 vs Y2)')
-                        vcsh_growth_y2_y1 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Growth (Y3 vs Y2)', unit_divisor=0)
-                        vcsh_ty_trong_tnv_y2 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Tỷ trọng Năm 3 (%)', unit_divisor=0)
+                        vcsh_y2 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Năm 2')
+                        vcsh_delta_y2_y1 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Delta (Y2 vs Y1)')
+                        vcsh_growth_y2_y1 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Growth (Y2 vs Y1)', unit_divisor=0)
+                        vcsh_ty_trong_tnv_y2 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Tỷ trọng Năm 2 (%)', unit_divisor=0) # Sửa 'Năm 3 (%)' -> 'Năm 2 (%)'
                         context['VCSH_Y2'] = format_report_number(vcsh_y2)
                         context['VCSH_DELTA_Y2_Y1'] = format_report_number(vcsh_delta_y2_y1, is_delta=True)
                         context['VCSH_GROWTH_Y2_Y1'] = format_report_number(vcsh_growth_y2_y1)
                         context['VCSH_TY_TRONG_TNV_Y2'] = format_report_number(vcsh_ty_trong_tnv_y2)
 
                         # --- Phân tích KQKD ---
-                        # Dùng 'Năm 3' cho Y2, 'S.S Tuyệt đối (Y3 vs Y2)' cho DELTA_Y2_Y1
-                        dt_y2 = get_report_value(df_is_processed, 'Doanh thu thuần', 'Năm 3')
-                        dt_delta_y2_y1 = get_report_value(df_is_processed, 'Doanh thu thuần', 'S.S Tuyệt đối (Y3 vs Y2)')
-                        dt_growth_y2_y1 = get_report_value(df_is_processed, 'Doanh thu thuần', 'S.S Tương đối (%) (Y3 vs Y2)', unit_divisor=0)
+                        # Dùng 'Năm 2' cho Y2, 'S.S Tuyệt đối (Y2 vs Y1)' cho DELTA_Y2_Y1
+                        dt_y2 = get_report_value(df_is_processed, 'Doanh thu thuần', 'Năm 2')
+                        dt_delta_y2_y1 = get_report_value(df_is_processed, 'Doanh thu thuần', 'S.S Tuyệt đối (Y2 vs Y1)')
+                        dt_growth_y2_y1 = get_report_value(df_is_processed, 'Doanh thu thuần', 'S.S Tương đối (%) (Y2 vs Y1)', unit_divisor=0)
                         context['DT_Y2'] = format_report_number(dt_y2)
                         context['DT_DELTA_Y2_Y1'] = format_report_number(dt_delta_y2_y1, is_delta=True)
                         context['DT_GROWTH_Y2_Y1'] = format_report_number(dt_growth_y2_y1)
 
                         # Tỷ trọng Giá vốn / Doanh thu
-                        gvhb_ty_trong_dt_y2 = get_report_value(df_ratios_processed, 'Giá vốn hàng bán', 'Năm 3', unit_divisor=0)
+                        gvhb_ty_trong_dt_y2 = get_report_value(df_ratios_processed, 'Giá vốn hàng bán', 'Năm 2', unit_divisor=0) # Sửa 'Năm 3' -> 'Năm 2'
                         context['GVHB_TY_TRONG_DT_Y2'] = format_report_number(gvhb_ty_trong_dt_y2)
 
                         # Lợi nhuận sau thuế
-                        lnst_y2 = get_report_value(df_is_processed, 'Lợi nhuận sau thuế', 'Năm 3')
-                        lnst_delta_y2_y1 = get_report_value(df_is_processed, 'Lợi nhuận sau thuế', 'S.S Tuyệt đối (Y3 vs Y2)')
+                        lnst_y2 = get_report_value(df_is_processed, 'Lợi nhuận sau thuế', 'Năm 2')
+                        lnst_delta_y2_y1 = get_report_value(df_is_processed, 'Lợi nhuận sau thuế', 'S.S Tuyệt đối (Y2 vs Y1)')
                         context['LNST_Y2'] = format_report_number(lnst_y2)
                         context['LNST_DELTA_Y2_Y1'] = format_report_number(lnst_delta_y2_y1, is_delta=True)
                         
@@ -874,7 +876,7 @@ if uploaded_file is not None:
                         st.download_button(
                             label="Tải xuống Báo cáo đã điền (Word) ⬇️",
                             data=f,
-                            file_name=f"Bao_cao_Phan_tich_2024_vs_2023.docx", # Tên file cố định theo yêu cầu
+                            file_name=f"Bao_cao_Phan_tich_{Y2_Name}_vs_{Y1_Name}.docx", # Tên file theo Y2 và Y1
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         )
                         st.success("Tạo báo cáo thành công!")
