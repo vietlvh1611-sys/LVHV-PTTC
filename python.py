@@ -367,9 +367,9 @@ def get_ai_analysis(data_for_ai, api_key):
         client = genai.Client(api_key=api_key)
         model_name = 'gemini-2.5-flash'  
         
-        # [CẬP NHẬT] System Instruction
+        # [CẬP NHẬT] System Instruction (Bổ sung đơn vị tính là triệu đồng)
         system_instruction_text = (
-            "Bạn là một chuyên gia phân tích tài chính chuyên nghiệp. "
+            "Bạn là một chuyên gia phân tích tài chính chuyên nghiệp. Chú ý: Tất cả các số liệu tiền tệ trong dữ liệu được cung cấp đều có đơn vị tính là **triệu đồng**. Hãy luôn đề cập đến đơn vị này khi trả lời các câu hỏi về số liệu tài chính cụ thể. "
             "Dựa trên dữ liệu đã cung cấp, hãy đưa ra một nhận xét khách quan, ngắn gọn (khoảng 3-4 đoạn) về tình hình tài chính của doanh nghiệp. "
             "Đánh giá tập trung vào tốc độ tăng trưởng, thay đổi cơ cấu tài sản, **tỷ trọng chi phí/doanh thu thuần**, **hiệu quả hoạt động (Vòng quay Tồn kho, Phải thu, Vốn lưu động)**, **cấu trúc vốn (Hệ số tự tài trợ và Hệ số nợ/VCSH)**, và **khả năng sinh lời (ROS, ROA, ROE)** trong 3 năm/kỳ."
         )
@@ -402,9 +402,10 @@ def get_chat_response(prompt, chat_history_st, context_data, api_key):
         model_name = 'gemini-2.5-flash'
         
         # 1. Định nghĩa System Instruction
-        # [CẬP NHẬT] System Instruction
+        # [CẬP NHẬT] System Instruction (Bổ sung đơn vị tính là triệu đồng)
         system_instruction_text = (
             "Bạn là một trợ lý phân tích tài chính thông minh (Financial Analyst Assistant). "
+            "Chú ý: Tất cả các số liệu tiền tệ trong dữ liệu được cung cấp đều có đơn vị tính là **triệu đồng**. Hãy luôn đề cập đến đơn vị này khi trả lời các câu hỏi về số liệu tài chính cụ thể (ví dụ: 'Tổng tài sản là 31.286 triệu đồng'). "
             "Bạn phải trả lời các câu hỏi của người dùng dựa trên dữ liệu tài chính đã xử lý sau. "
             "Dữ liệu này bao gồm tốc độ tăng trưởng, so sánh tuyệt đối/tương đối, tỷ trọng cơ cấu, tỷ trọng chi phí/doanh thu thuần, và **các chỉ số tài chính chủ chốt (Thanh toán, Hoạt động, Cấu trúc Vốn, Sinh lời)** trong 3 kỳ Báo cáo tài chính. "
             "Nếu người dùng hỏi một câu không liên quan đến dữ liệu tài chính hoặc phân tích, hãy lịch sự từ chối trả lời. "
