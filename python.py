@@ -406,7 +406,7 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-    try:
+    try: # <--- KHỐI TRY CHÍNH BẮT ĐẦU TỪ ĐÂY
         
         def clean_column_names(df):
             new_columns = []
@@ -887,14 +887,14 @@ if uploaded_file is not None:
 
             # --- KẾT THÚC MỤC 8 ---
 
-
-        except ValueError as ve:
-            st.error(f"Lỗi cấu trúc dữ liệu: {ve}")
-            st.session_state.data_for_chat = None # Reset chat context
-        except Exception as e:
-            if "empty" not in str(e) and "columns" not in str(e) and "cannot index" not in str(e):
-                 st.error(f"Có lỗi xảy ra khi đọc hoặc xử lý file: {e}.")
-            st.session_state.data_for_chat = None # Reset chat context
+    # [SỬA LỖI] Hai khối 'except' này phải nằm ngang hàng với 'try' (đã sửa)
+    except ValueError as ve:
+        st.error(f"Lỗi cấu trúc dữ liệu: {ve}")
+        st.session_state.data_for_chat = None # Reset chat context
+    except Exception as e:
+        if "empty" not in str(e) and "columns" not in str(e) and "cannot index" not in str(e):
+             st.error(f"Có lỗi xảy ra khi đọc hoặc xử lý file: {e}.")
+        st.session_state.data_for_chat = None # Reset chat context
 
 else:
     st.info("Vui lòng tải lên file Excel (Sheet 1 chứa BĐKT và KQKD) để bắt đầu phân tích.")
