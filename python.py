@@ -1182,7 +1182,9 @@ else:
                     """
                     
                 except Exception as e:
-                    raise Exception(f"Lỗi khi trích xuất văn bản từ file Word: {e}. Vui lòng thử lại với file Markdown (.md)")
+                    # Nếu trích xuất thất bại, báo lỗi và dừng
+                    st.error(f"Lỗi khi trích xuất văn bản từ file Word: {e}. Vui lòng thử lại với file Markdown (.md)")
+                    return # Thêm return để dừng thực thi
                     
             elif file_extension in ['md', 'txt']:
                 template_content = uploaded_template.read().decode("utf-8")
