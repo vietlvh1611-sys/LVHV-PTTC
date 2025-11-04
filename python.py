@@ -3,6 +3,7 @@ import pandas as pd
 from google import genai
 from google.genai.errors import APIError
 import numpy as np
+import io
 
 # Tương thích cao nhất: System Instruction được truyền bằng cách ghép vào User Prompt
 
@@ -13,6 +14,9 @@ if "messages" not in st.session_state:
 # Lưu trữ dữ liệu đã xử lý dưới dạng Markdown để làm bối cảnh (context) cho AI
 if "data_for_chat" not in st.session_state:
     st.session_state.data_for_chat = None
+# Lưu trữ các DataFrame đã xử lý cho việc tạo báo cáo (Mục 7)
+if "processed_dataframes" not in st.session_state:
+    st.session_state.processed_dataframes = {}
 
 # --- Cấu hình Trang Streamlit ---
 st.set_page_config(
@@ -106,7 +110,7 @@ def highlight_financial_items(row):
     return styles
 # === KẾT THÚC [V16] HÀM STYLING ===
 
-# === [FIX] HÀM HỖ TRỢ TÍNH TOÁN (DI CHUYỂN RA NGOÀI VÀ SỬA LỖI) ===
+# === HÀM HỖ TRỢ TÍNH TOÁN ===
 
 def get_value(df, keyword, year):
     """Lấy giá trị số (float) từ DataFrame, xử lý NaN và lỗi."""
@@ -117,8 +121,7 @@ def get_value(df, keyword, year):
     # 1. Lấy giá trị đầu tiên, đảm bảo chuyển nó thành số (numeric)
     value = pd.to_numeric(row[year].iloc[0], errors='coerce') 
     
-    # 2. [FIX] Nếu giá trị là NaN, thay bằng 0. Nếu không, giữ nguyên.
-    # (pd.isna() hoạt động chính xác trên numpy.float64)
+    # 2. Nếu giá trị là NaN, thay bằng 0.
     return 0.0 if pd.isna(value) else float(value)
 
 def safe_div(numerator, denominator):
@@ -134,16 +137,226 @@ def safe_div(numerator, denominator):
         return 0.0 
     return result
 
-# === KẾT THÚC HÀM HỖ TRỢ ===
+def get_top_items(df, parent_keyword, year, n=2, is_asset=True):
+    """Tìm 2 khoản mục lớn nhất trong Tài sản Ngắn hạn/Dài hạn (hoặc nguồn vốn) theo tỷ trọng."""
+    
+    # Lọc các khoản mục con, loại bỏ các dòng tổng cộng/phụ đề.
+    # Đây là logic giả định, cần điều chỉnh dựa trên cấu trúc file Excel thực tế
+    
+    # 1. Tìm tổng của khoản mục cha (ví dụ: Tổng TSNH)
+    parent_row = df[df['Chỉ tiêu'].str.contains(parent_keyword, case=False, na=False)]
+    if parent_row.empty or parent_row[year].iloc[0] == 0:
+        return [('N/A', 0, '0.0%'), ('N/A', 0, '0.0%')]
+    
+    parent_value = parent_row[year].iloc[0]
+    
+    # 2. Lọc các khoản mục con (giả định chúng nằm gần khoản mục cha)
+    # Lấy index của khoản mục cha
+    parent_index = parent_row.index[0]
+    
+    # Chỉ lấy các khoản mục con ngay sau đó (giả định khoảng 10-15 dòng)
+    df_slice = df.loc[parent_index + 1 : parent_index + 15].copy()
+    
+    # Loại bỏ các dòng trống/dòng tổng cộng con/các dòng chứa chữ "TỔNG" hoặc chữ cái đầu (A, B, C...)
+    df_slice = df_slice[~df_slice['Chỉ tiêu'].str.startswith(('A', 'B', 'C', 'I', 'II', 'III', 'TỔNG'))].copy()
+    df_slice = df_slice[df_slice[year] != 0].copy()
+    
+    if df_slice.empty:
+        return [('N/A', 0, '0.0%'), ('N/A', 0, '0.0%')]
 
+    # 3. Tính toán tỷ trọng và sắp xếp
+    df_slice['Ratio'] = df_slice[year] / parent_value
+    
+    # Sắp xếp theo giá trị tuyệt đối giảm dần
+    df_slice['AbsValue'] = df_slice[year].abs()
+    df_slice = df_slice.sort_values(by='AbsValue', ascending=False)
+    
+    # 4. Trả về kết quả
+    results = []
+    for _, row in df_slice.head(n).iterrows():
+        item_name = str(row['Chỉ tiêu']).strip()
+        item_value = row[year]
+        item_pct = "{:.1f}%".format(row['Ratio'] * 100)
+        results.append((item_name, format_vn_currency(item_value), item_pct))
+        
+    # Đảm bảo luôn trả về đủ n mục
+    while len(results) < n:
+        results.append(('N/A', '', ''))
+        
+    return results[:n]
+
+
+# === ÁNH XẠ DỮ LIỆU TỪ DATAFRAME VÀO PLACEHOLDERS ===
+def map_data_to_placeholders(df_bs_proc, df_is_proc, y1_name, y2_name, y3_name, col_names):
+    
+    # 1. Khởi tạo dictionary chứa các cặp {placeholder: value}
+    placeholders = {}
+    
+    # Dùng list years nội bộ để dễ truy cập
+    years = ['Năm 1', 'Năm 2', 'Năm 3']
+    
+    # Lấy giá trị từ Bảng CĐKT
+    def get_bs_val(keyword, year_key):
+        return get_value(df_bs_proc, keyword, year_key)
+
+    # -----------------------------------------------------
+    # Lấy dữ liệu thô (đã được định dạng)
+    # -----------------------------------------------------
+    
+    # TTS
+    TTS_Y1 = get_bs_val('TỔNG CỘNG TÀI SẢN|TỔNG CỘNG|TỔNG CỘNG NGUỒN VỐN', years[0])
+    TTS_Y2 = get_bs_val('TỔNG CỘNG TÀI SẢN|TỔNG CỘNG|TỔNG CỘNG NGUỒN VỐN', years[1])
+    TTS_Y3 = get_bs_val('TỔNG CỘNG TÀI SẢN|TỔNG CỘNG|TỔNG CỘNG NGUỒN VỐN', years[2])
+    
+    # TSNH
+    TSNH_Y1 = get_bs_val('Tài sản ngắn hạn|TS ngắn hạn', years[0])
+    TSNH_Y2 = get_bs_val('Tài sản ngắn hạn|TS ngắn hạn', years[1])
+    TSNH_Y3 = get_bs_val('Tài sản ngắn hạn|TS ngắn hạn', years[2])
+    
+    # TSDH
+    TSDH_Y1 = get_bs_val('Tài sản dài hạn|TS dài hạn', years[0])
+    TSDH_Y2 = get_bs_val('Tài sản dài hạn|TS dài hạn', years[1])
+    TSDH_Y3 = get_bs_val('Tài sản dài hạn|TS dài hạn', years[2])
+    
+    # Tiền
+    CASH_Y2 = get_bs_val('Tiền và các khoản tương đương tiền', years[1])
+    CASH_Y3 = get_bs_val('Tiền và các khoản tương đương tiền', years[2])
+
+    # Phải thu KH
+    AR_Y2 = get_bs_val('Phải thu ngắn hạn của khách hàng', years[1])
+    AR_Y3 = get_bs_val('Phải thu ngắn hạn của khách hàng', years[2])
+    
+    # Hàng tồn kho
+    INV_Y2 = get_bs_val('Hàng tồn kho|HTK', years[1])
+    INV_Y3 = get_bs_val('Hàng tồn kho|HTK', years[2])
+
+    # TSCĐHH
+    PP_E_Y2 = get_bs_val('Tài sản cố định hữu hình', years[1])
+    PP_E_Y3 = get_bs_val('Tài sản cố định hữu hình', years[2])
+
+    # -----------------------------------------------------
+    # 2. Tính toán và Ánh xạ các giá trị
+    # -----------------------------------------------------
+    
+    # ** A. So sánh Y2 vs Y1 **
+    placeholders['{{TTS_Y2_CUR}}'] = format_vn_currency(TTS_Y2)
+    placeholders['{{TTS_DELTA_Y2_Y1_CUR}}'] = format_vn_delta_currency(TTS_Y2 - TTS_Y1)
+    placeholders['{{TTS_GROWTH_Y2_Y1_PCT}}'] = format_vn_percentage(safe_div(TTS_Y2 - TTS_Y1, TTS_Y1) * 100)
+
+    placeholders['{{TSNH_Y2_CUR}}'] = format_vn_currency(TSNH_Y2)
+    placeholders['{{TSNH_DELTA_Y2_Y1_CUR}}'] = format_vn_delta_currency(TSNH_Y2 - TSNH_Y1)
+    placeholders['{{TSNH_GROWTH_Y2_Y1_PCT}}'] = format_vn_percentage(safe_div(TSNH_Y2 - TSNH_Y1, TSNH_Y1) * 100)
+
+    placeholders['{{TSDH_Y2_CUR}}'] = format_vn_currency(TSDH_Y2)
+    placeholders['{{TSDH_DELTA_Y2_Y1_CUR}}'] = format_vn_delta_currency(TSDH_Y2 - TSDH_Y1)
+    placeholders['{{TSDH_GROWTH_Y2_Y1_PCT}}'] = format_vn_percentage(safe_div(TSDH_Y2 - TSDH_Y1, TSDH_Y1) * 100)
+    
+    # ** B. So sánh Y3 vs Y2 **
+    placeholders['{{TTS_Y3_CUR}}'] = format_vn_currency(TTS_Y3)
+    placeholders['{{TTS_DELTA_Y3_Y2_CUR}}'] = format_vn_delta_currency(TTS_Y3 - TTS_Y2)
+    placeholders['{{TTS_GROWTH_Y3_Y2_PCT}}'] = format_vn_percentage(safe_div(TTS_Y3 - TTS_Y2, TTS_Y2) * 100)
+
+    placeholders['{{TSNH_Y3_CUR}}'] = format_vn_currency(TSNH_Y3)
+    placeholders['{{TSNH_DELTA_Y3_Y2_CUR}}'] = format_vn_delta_currency(TSNH_Y3 - TSNH_Y2)
+    placeholders['{{TSNH_GROWTH_Y3_Y2_PCT}}'] = format_vn_percentage(safe_div(TSNH_Y3 - TSNH_Y2, TSNH_Y2) * 100)
+
+    placeholders['{{TSDH_Y3_CUR}}'] = format_vn_currency(TSDH_Y3)
+    placeholders['{{TSDH_DELTA_Y3_Y2_CUR}}'] = format_vn_delta_currency(TSDH_Y3 - TSDH_Y2)
+    placeholders['{{TSDH_GROWTH_Y3_Y2_PCT}}'] = format_vn_percentage(safe_div(TSDH_Y3 - TSDH_Y2, TSDH_Y2) * 100)
+
+    # ** C. Chi tiết Tài sản Ngắn hạn **
+    
+    # Tiền
+    CASH_Y1 = get_bs_val('Tiền và các khoản tương đương tiền', years[0])
+    placeholders['{{CASH_Y2_CUR}}'] = format_vn_currency(CASH_Y2)
+    placeholders['{{CASH_Y3_CUR}}'] = format_vn_currency(CASH_Y3)
+    placeholders['{{CASH_DELTA_Y2_Y1_CUR}}'] = format_vn_delta_currency(CASH_Y2 - CASH_Y1)
+    placeholders['{{CASH_DELTA_Y3_Y2_CUR}}'] = format_vn_delta_currency(CASH_Y3 - CASH_Y2)
+    
+    # Phải thu
+    AR_Y1 = get_bs_val('Phải thu ngắn hạn của khách hàng', years[0])
+    placeholders['{{AR_Y2_CUR}}'] = format_vn_currency(AR_Y2)
+    placeholders['{{AR_Y3_CUR}}'] = format_vn_currency(AR_Y3)
+    placeholders['{{AR_DELTA_Y2_Y1_CUR}}'] = format_vn_delta_currency(AR_Y2 - AR_Y1)
+    placeholders['{{AR_GROWTH_Y2_Y1_PCT}}'] = format_vn_percentage(safe_div(AR_Y2 - AR_Y1, AR_Y1) * 100)
+    placeholders['{{AR_PCT_TSNH_Y2}}'] = format_vn_percentage(safe_div(AR_Y2, TSNH_Y2) * 100)
+    
+    placeholders['{{AR_DELTA_Y3_Y2_CUR}}'] = format_vn_delta_currency(AR_Y3 - AR_Y2)
+    placeholders['{{AR_GROWTH_Y3_Y2_PCT}}'] = format_vn_percentage(safe_div(AR_Y3 - AR_Y2, AR_Y2) * 100)
+    placeholders['{{AR_PCT_TSNH_Y3}}'] = format_vn_percentage(safe_div(AR_Y3, TSNH_Y3) * 100)
+
+    # Hàng tồn kho
+    INV_Y1 = get_bs_val('Hàng tồn kho|HTK', years[0])
+    placeholders['{{INV_Y2_CUR}}'] = format_vn_currency(INV_Y2)
+    placeholders['{{INV_Y3_CUR}}'] = format_vn_currency(INV_Y3)
+    placeholders['{{INV_DELTA_Y2_Y1_CUR}}'] = format_vn_delta_currency(INV_Y2 - INV_Y1)
+    placeholders['{{INV_GROWTH_Y2_Y1_PCT}}'] = format_vn_percentage(safe_div(INV_Y2 - INV_Y1, INV_Y1) * 100)
+    placeholders['{{INV_PCT_TSNH_Y2}}'] = format_vn_percentage(safe_div(INV_Y2, TSNH_Y2) * 100)
+    
+    placeholders['{{INV_DELTA_Y3_Y2_CUR}}'] = format_vn_delta_currency(INV_Y3 - INV_Y2)
+    placeholders['{{INV_GROWTH_Y3_Y2_PCT}}'] = format_vn_percentage(safe_div(INV_Y3 - INV_Y2, INV_Y2) * 100)
+    placeholders['{{INV_PCT_TSNH_Y3}}'] = format_vn_percentage(safe_div(INV_Y3, TSNH_Y3) * 100)
+
+    # ** D. Chi tiết Tài sản Dài hạn **
+    
+    # TSCĐHH
+    PP_E_Y1 = get_bs_val('Tài sản cố định hữu hình', years[0])
+    placeholders['{{PP&E_Y2_CUR}}'] = format_vn_currency(PP_E_Y2)
+    placeholders['{{PP&E_Y3_CUR}}'] = format_vn_currency(PP_E_Y3)
+    placeholders['{{PP&E_DELTA_Y2_Y1_CUR}}'] = format_vn_delta_currency(PP_E_Y2 - PP_E_Y1)
+    placeholders['{{PP&E_GROWTH_Y2_Y1_PCT}}'] = format_vn_percentage(safe_div(PP_E_Y2 - PP_E_Y1, PP_E_Y1) * 100)
+    placeholders['{{PP&E_PCT_TSDH_Y2}}'] = format_vn_percentage(safe_div(PP_E_Y2, TSDH_Y2) * 100)
+    
+    placeholders['{{PP&E_DELTA_Y3_Y2_CUR}}'] = format_vn_delta_currency(PP_E_Y3 - PP_E_Y2)
+    placeholders['{{PP&E_GROWTH_Y3_Y2_PCT}}'] = format_vn_percentage(safe_div(PP_E_Y3 - PP_E_Y2, PP_E_Y2) * 100)
+    placeholders['{{PP&E_PCT_TSDH_Y3}}'] = format_vn_percentage(safe_div(PP_E_Y3, TSDH_Y3) * 100)
+    
+    # ** E. Tài sản tập trung (Top Items) - SỬ DỤNG LOGIC GIẢ ĐỊNH TRÊN TSNH VÀ TSDH CHÍNH **
+    
+    # Top 2 TSNH Y2
+    top_tsnh_y2 = get_top_items(df_bs_proc, 'Tài sản ngắn hạn|TS ngắn hạn', years[1], n=2)
+    placeholders['{{TSNH_TOP_ITEM_1_NAME}}'] = top_tsnh_y2[0][0]
+    placeholders['{{TSNH_TOP_ITEM_1_VALUE_CUR}}'] = top_tsnh_y2[0][1]
+    placeholders['{{TSNH_TOP_ITEM_1_PCT}}'] = top_tsnh_y2[0][2]
+    placeholders['{{TSNH_TOP_ITEM_2_NAME}}'] = top_tsnh_y2[1][0]
+    placeholders['{{TSNH_TOP_ITEM_2_VALUE_CUR}}'] = top_tsnh_y2[1][1]
+    placeholders['{{TSNH_TOP_ITEM_2_PCT}}'] = top_tsnh_y2[1][2]
+
+    # Top 2 TSDH Y2 (Dùng khoản mục lớn nhất trong TSDH, thường là TSCDHH)
+    # Lưu ý: Hàm get_top_items lấy TOP 2 khoản mục con, không phải khoản mục chính (như TSCDHH, ĐTTC,...)
+    top_tsdh_y2 = get_top_items(df_bs_proc, 'Tài sản dài hạn|TS dài hạn', years[1], n=2)
+    placeholders['{{TSDH_TOP_ITEM_1_NAME}}'] = top_tsdh_y2[0][0]
+    placeholders['{{TSDH_TOP_ITEM_1_VALUE_CUR}}'] = top_tsdh_y2[0][1]
+    placeholders['{{TSDH_TOP_ITEM_1_PCT}}'] = top_tsdh_y2[0][2]
+    placeholders['{{TSDH_TOP_ITEM_2_NAME}}'] = top_tsdh_y2[1][0]
+    placeholders['{{TSDH_TOP_ITEM_2_VALUE_CUR}}'] = top_tsdh_y2[1][1]
+    placeholders['{{TSDH_TOP_ITEM_2_PCT}}'] = top_tsdh_y2[1][2]
+    
+    # Top 2 TSNH Y3
+    top_tsnh_y3 = get_top_items(df_bs_proc, 'Tài sản ngắn hạn|TS ngắn hạn', years[2], n=2)
+    placeholders['{{TSNH_TOP_ITEM_1_NAME_Y3}}'] = top_tsnh_y3[0][0]
+    placeholders['{{TSNH_TOP_ITEM_1_VALUE_CUR_Y3}}'] = top_tsnh_y3[0][1]
+    placeholders['{{TSNH_TOP_ITEM_1_PCT_Y3}}'] = top_tsnh_y3[0][2]
+    placeholders['{{TSNH_TOP_ITEM_2_NAME_Y3}}'] = top_tsnh_y3[1][0]
+    placeholders['{{TSNH_TOP_ITEM_2_VALUE_CUR_Y3}}'] = top_tsnh_y3[1][1]
+    placeholders['{{TSNH_TOP_ITEM_2_PCT_Y3}}'] = top_tsnh_y3[1][2]
+    
+    # Top 2 TSDH Y3
+    top_tsdh_y3 = get_top_items(df_bs_proc, 'Tài sản dài hạn|TS dài hạn', years[2], n=2)
+    placeholders['{{TSDH_TOP_ITEM_1_NAME_Y3}}'] = top_tsdh_y3[0][0]
+    placeholders['{{TSDH_TOP_ITEM_1_VALUE_CUR_Y3}}'] = top_tsdh_y3[0][1]
+    placeholders['{{TSDH_TOP_ITEM_1_PCT_Y3}}'] = top_tsdh_y3[0][2]
+    placeholders['{{TSDH_TOP_ITEM_2_NAME_Y3}}'] = top_tsdh_y3[1][0]
+    placeholders['{{TSDH_TOP_ITEM_2_VALUE_CUR_Y3}}'] = top_tsdh_y3[1][1]
+    placeholders['{{TSDH_TOP_ITEM_2_PCT_Y3}}'] = top_tsdh_y3[1][2]
+
+    return placeholders
 
 # --- Hàm tính toán chính (Sử dụng Caching để Tối ưu hiệu suất) ---
 @st.cache_data
 def process_financial_data(df_balance_sheet, df_income_statement):
     """
     Thực hiện các phép tính Tăng trưởng, So sánh Tuyệt đối, Tỷ trọng Cơ cấu, Tỷ trọng Chi phí/DT thuần và Chỉ số Tài chính.
-    [CẬP NHẬT] Bổ sung Vòng quay Phải thu, Vòng quay VLĐ, ROS, ROA, ROE.
-    [CẬP NHẬT] Sắp xếp lại df_final_ratios: Thanh toán -> Hoạt động -> Cân nợ -> Sinh lời.
     Trả về tuple (df_bs_processed, df_is_processed, df_ratios_processed, df_final_ratios)
     """
     
@@ -360,10 +573,10 @@ def process_financial_data(df_balance_sheet, df_income_statement):
     return df_bs, df_is, df_ratios, df_final_ratios
 
 # --- Hàm gọi API Gemini cho Phân tích Báo cáo (Single-shot analysis) ---
-# Giữ nguyên hàm này
 def get_ai_analysis(data_for_ai, api_key):
     """Gửi dữ liệu phân tích đến Gemini API và nhận nhận xét."""
     try:
+        # Sử dụng API key đã cung cấp hoặc giả định có sẵn
         client = genai.Client(api_key=api_key)
         model_name = 'gemini-2.5-flash'  
         
@@ -395,9 +608,9 @@ def get_ai_analysis(data_for_ai, api_key):
         return f"Đã xảy ra lỗi không xác định: {e}"
 
 # --- Hàm gọi API Gemini cho CHAT tương tác (có quản lý lịch sử) ---
-# Giữ nguyên hàm này, chỉ cập nhật System Instruction
 def get_chat_response(prompt, chat_history_st, context_data, api_key):
     try:
+        # Sử dụng API key đã cung cấp hoặc giả định có sẵn
         client = genai.Client(api_key=api_key)
         model_name = 'gemini-2.5-flash'
         
@@ -451,24 +664,41 @@ uploaded_file = st.file_uploader(
     type=['xlsx', 'xls']
 )
 
+# Khai báo các biến tên cột ở phạm vi toàn cục của script
+col_nam_1, col_nam_2, col_nam_3 = None, None, None
+Y1_Name, Y2_Name, Y3_Name = None, None, None
+
+def format_date_col_name(col_name):
+    col_name = str(col_name) 
+    if ' ' in col_name:
+        col_name = col_name.split(' ')[0]
+    try:
+        parts = col_name.split('-')
+        if len(parts) == 3:
+            return f"{parts[2]}/{parts[1]}/{parts[0]}"
+    except Exception:
+        pass
+    return col_name
+
+# -----------------------------------------------------------------
+# HÀM CHUẨN HÓA TÊN CỘT ĐỂ DÙNG LỌC DF (LOẠI BỎ DATETIME OBJECT)
+# -----------------------------------------------------------------
+def clean_column_names(df):
+    new_columns = []
+    for col in df.columns:
+        col_str = str(col)
+        if isinstance(col, pd.Timestamp) or (isinstance(col, str) and ' ' in col_str and col_str.endswith('00:00:00')):
+            new_columns.append(col_str)
+        else:
+            new_columns.append(col_str)
+    df.columns = new_columns
+    return df
+# -----------------------------------------------------------------
+
+
 if uploaded_file is not None:
     try:
         
-        # -----------------------------------------------------------------
-        # HÀM CHUẨN HÓA TÊN CỘT ĐỂ DÙNG LỌC DF (LOẠI BỎ DATETIME OBJECT)
-        # -----------------------------------------------------------------
-        def clean_column_names(df):
-            new_columns = []
-            for col in df.columns:
-                col_str = str(col)
-                if isinstance(col, pd.Timestamp) or (isinstance(col, str) and ' ' in col_str and col_str.endswith('00:00:00')):
-                    new_columns.append(col_str)
-                else:
-                    new_columns.append(col_str)
-            df.columns = new_columns
-            return df
-        # -----------------------------------------------------------------
-
         # --- ĐỌC DỮ LIỆU TỪ NHIỀU SHEET ---
         xls = pd.ExcelFile(uploaded_file)
         
@@ -673,22 +903,21 @@ if uploaded_file is not None:
             # -----------------------------------------------------
             # CHUẨN HÓA TÊN CỘT ĐỂ HIỂN THỊ (DD/MM/YYYY hoặc YYYY)
             # -----------------------------------------------------
-            def format_col_name(col_name):
-                col_name = str(col_name) 
-                if ' ' in col_name:
-                    col_name = col_name.split(' ')[0]
-                try:
-                    parts = col_name.split('-')
-                    if len(parts) == 3:
-                        return f"{parts[2]}/{parts[1]}/{parts[0]}"
-                except Exception:
-                    pass
-                return col_name
-
-            Y1_Name = format_col_name(col_nam_1)
-            Y2_Name = format_col_name(col_nam_2)
-            Y3_Name = format_col_name(col_nam_3)
+            Y1_Name = format_date_col_name(col_nam_1)
+            Y2_Name = format_date_col_name(col_nam_2)
+            Y3_Name = format_date_col_name(col_nam_3)
+            col_names = {'Năm 1': Y1_Name, 'Năm 2': Y2_Name, 'Năm 3': Y3_Name}
             # -----------------------------------------------------
+
+            # LƯU CÁC DATAFRAME ĐÃ XỬ LÝ VÀO SESSION STATE CHO MỤC TẠO BÁO CÁO
+            st.session_state.processed_dataframes = {
+                'df_bs_proc': df_bs_processed,
+                'df_is_proc': df_is_processed,
+                'col_names': col_names,
+                'y1_name_raw': col_nam_1,
+                'y2_name_raw': col_nam_2,
+                'y3_name_raw': col_nam_3
+            }
             
             # --- Chức năng 2 & 3: Hiển thị Kết quả theo Tabs ---
             st.subheader("2. Phân tích Bảng Cân đối Kế toán & 3. Phân tích Tỷ trọng Cơ cấu Tài sản")
@@ -770,10 +999,12 @@ if uploaded_file is not None:
                     Y2_Name: format_vn_currency,
                     Y3_Name: format_vn_currency,
                     f'S.S Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_currency,
-                    f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})': format_vn_percentage,
                     f'S.S Tuyệt đối ({Y3_Name} vs {Y2_Name})': format_vn_delta_currency, 
+                    f'S.S Tương đối (%) ({Y2_Name} vs {Y1_Name})': format_vn_percentage, 
                     f'S.S Tương đối (%) ({Y3_Name} vs {Y2_Name})': format_vn_percentage 
                 }), use_container_width=True, hide_index=True)
+                
+                is_context = df_is_processed.copy().rename(columns=col_names).to_markdown(index=False)
 
             else:
                 st.info("Không có dữ liệu Báo cáo Kết quả hoạt động kinh doanh để hiển thị.")
@@ -803,6 +1034,8 @@ if uploaded_file is not None:
                     Y3_Name: format_vn_percentage,
                     f'So sánh Tương đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio
                 }), use_container_width=True, hide_index=True)
+
+                ratios_context = df_ratios_processed.copy().rename(columns=col_names).to_markdown(index=False)
                 
             else:
                 st.info("Không thể tính Tỷ trọng Chi phí/Doanh thu thuần do thiếu dữ liệu KQKD.")
@@ -846,6 +1079,8 @@ if uploaded_file is not None:
                     f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio # Delta Tỷ lệ
                 }), use_container_width=True, hide_index=True)
                 
+                key_ratios_context = df_financial_ratios_processed.copy().rename(columns=col_names).to_markdown(index=False)
+
             else:
                 st.info("Không thể tính các Chỉ số Tài chính Chủ chốt do thiếu dữ liệu.")
             
@@ -854,33 +1089,13 @@ if uploaded_file is not None:
             # -----------------------------------------------------
             
             # Ánh xạ tên cột nội bộ ('Năm 1', 'Năm 2', 'Năm 3') sang tên kỳ báo cáo thực tế.
-            rename_map_years = {'Năm 1': Y1_Name, 'Năm 2': Y2_Name, 'Năm 3': Y3_Name}
+            # col_names đã được định nghĩa ở trên
             
             # 1. Chuẩn bị Bảng CĐKT Context (luôn có nếu đã chạy đến đây)
-            df_bs_context = df_bs_processed.copy().rename(columns=rename_map_years)
+            df_bs_context = df_bs_processed.copy().rename(columns=col_names)
             bs_context_md = df_bs_context.to_markdown(index=False)
 
-            # 2. Chuẩn bị KQKD Context
-            if not df_is_processed.empty:
-                df_is_context = df_is_processed.copy().rename(columns=rename_map_years)
-                is_context_md = df_is_context.to_markdown(index=False)
-            else:
-                is_context_md = "Không tìm thấy dữ liệu Báo cáo Kết quả hoạt động kinh doanh." # Mặc định cũ
-
-            # 3. Chuẩn bị Tỷ trọng Chi phí Context
-            if not df_ratios_processed.empty:
-                df_ratios_context = df_ratios_processed.copy().rename(columns=rename_map_years)
-                ratios_context_md = df_ratios_context.to_markdown(index=False)
-            else:
-                ratios_context_md = "Không tìm thấy dữ liệu Tỷ trọng Chi phí/Doanh thu thuần." # Mặc định cũ
-                
-            # 4. Chuẩn bị Chỉ số Tài chính Context
-            if not df_financial_ratios_processed.empty:
-                df_key_ratios_context = df_financial_ratios_processed.copy().rename(columns=rename_map_years)
-                key_ratios_context_md = df_key_ratios_context.to_markdown(index=False)
-            else:
-                 key_ratios_context_md = "Không tìm thấy dữ liệu Chỉ tiêu Tài chính Chủ chốt." # Mặc định cũ
-
+            # 2. KQKD Context, Tỷ trọng CP Context, Chỉ số TC Context đã được tạo ở trên
 
             data_for_chat_context = f"""
             **DỮ LIỆU TÀI CHÍNH ĐÃ XỬ LÝ (Kỳ: {Y1_Name}, {Y2_Name}, {Y3_Name}):**
@@ -889,13 +1104,13 @@ if uploaded_file is not None:
             {bs_context_md}
             
             **BÁO CÁO KẾT QUẢ KINH DOANH (Income Statement Analysis):**
-            {is_context_md}
+            {is_context}
 
             **TỶ TRỌNG CHI PHÍ/DOANH THU THUẦN (%):**
-            {ratios_context_md}
+            {ratios_context}
             
             **CÁC HỆ SỐ TÀI CHÍNH CHỦ CHỐT (Thanh toán, Hoạt động, Cấu trúc Vốn, Sinh lời):**
-            {key_ratios_context_md}
+            {key_ratios_context}
             """
             st.session_state.data_for_chat = data_for_chat_context
             
@@ -907,17 +1122,78 @@ if uploaded_file is not None:
     except ValueError as ve:
         st.error(f"Lỗi cấu trúc dữ liệu: {ve}")
         st.session_state.data_for_chat = None # Reset chat context
+        st.session_state.processed_dataframes = {}
     except Exception as e:
         if "empty" not in str(e) and "columns" not in str(e) and "cannot index" not in str(e):
              st.error(f"Có lỗi xảy ra khi đọc hoặc xử lý file: {e}.")
         st.session_state.data_for_chat = None # Reset chat context
+        st.session_state.processed_dataframes = {}
 
 else:
     st.info("Vui lòng tải lên file Excel (Sheet 1 chứa BĐKT và KQKD) để bắt đầu phân tích.")
     st.session_state.data_for_chat = None # Đảm bảo context được reset khi chưa có file
+    st.session_state.processed_dataframes = {}
 
-# --- Chức năng 7: Khung Chatbot tương tác (Thay thế Mục 8 cũ) ---
-st.subheader("7. Trò chuyện và Hỏi đáp (Gemini AI) 💬") 
+# -----------------------------------------------------
+# CHỨC NĂNG MỚI: MỤC 7 - TẠO BÁO CÁO TỪ TEMPLATE
+# -----------------------------------------------------
+st.subheader("7. Tạo Báo cáo Phân tích từ Mẫu (Template Generation) 📄") 
+
+if not st.session_state.processed_dataframes:
+    st.info("Vui lòng tải lên và xử lý báo cáo tài chính trước khi sử dụng chức năng này.")
+else:
+    uploaded_template = st.file_uploader(
+        "Tải lên file Mẫu Báo cáo phân tích (định dạng Markdown .md)",
+        type=['md', 'txt']
+    )
+    
+    if uploaded_template is not None:
+        try:
+            # Đọc nội dung template
+            template_content = uploaded_template.read().decode("utf-8")
+            
+            # Lấy dữ liệu đã xử lý
+            df_bs_proc = st.session_state.processed_dataframes['df_bs_proc']
+            df_is_proc = st.session_state.processed_dataframes['df_is_proc']
+            col_names = st.session_state.processed_dataframes['col_names']
+
+            # Ánh xạ dữ liệu vào placeholders
+            placeholders = map_data_to_placeholders(
+                df_bs_proc, 
+                df_is_proc, 
+                col_names['Năm 1'], 
+                col_names['Năm 2'], 
+                col_names['Năm 3'], 
+                col_names
+            )
+            
+            # Thay thế các placeholders
+            report_content = template_content
+            for placeholder, value in placeholders.items():
+                report_content = report_content.replace(placeholder, str(value))
+                
+            st.success("Tạo báo cáo thành công!")
+            
+            # Hiển thị kết quả dưới dạng Markdown
+            st.markdown("##### Kết quả Báo cáo Phân tích (Sẵn sàng để Copy/Tải xuống)")
+            st.markdown(report_content)
+            
+            # Thêm nút tải xuống
+            st.download_button(
+                label="Tải xuống Báo cáo (.md)",
+                data=report_content,
+                file_name="Bao_cao_phan_tich_hoan_thanh.md",
+                mime="text/markdown"
+            )
+
+        except Exception as e:
+            st.error(f"Lỗi khi xử lý template: {e}")
+
+
+# -----------------------------------------------------
+# CHỨC NĂNG CUỐI: MỤC 8 - KHUNG CHATBOT TƯƠNG TÁC
+# -----------------------------------------------------
+st.subheader("8. Trò chuyện và Hỏi đáp (Gemini AI) 💬") 
 if st.session_state.data_for_chat is None:
     st.info("Vui lòng tải lên và xử lý báo cáo tài chính trước khi bắt đầu trò chuyện với AI.")
 else:
@@ -928,17 +1204,9 @@ else:
 
     # Xử lý input mới từ người dùng
     if prompt := st.chat_input("Hỏi AI về báo cáo tài chính này..."):
-        # Lấy API key từ Streamlit secrets (giả định đã được thiết lập)
-        # Trong môi trường Canvas, st.secrets.get("GEMINI_API_KEY") sẽ không hoạt động.
-        # Ta giả định môi trường Canvas sẽ cung cấp API Key hoặc ứng dụng Streamlit chạy bên ngoài đã được cấu hình.
-        # Giữ nguyên logic kiểm tra API key mặc dù trong Canvas nó không cần thiết.
         api_key = st.secrets.get("GEMINI_API_KEY")
         
-        # Trong môi trường Streamlit Cloud hoặc local, nếu API key không có, báo lỗi.
-        # Trong môi trường Canvas, __api_key sẽ được cung cấp, nhưng Streamlit không sử dụng biến global này.
         if not api_key:
-            # Chỉ hiển thị cảnh báo này nếu không phải môi trường Canvas/External API Key
-            # Nếu đang chạy trong môi trường Streamlit thông thường, cần API Key.
             st.error("Lỗi: Không tìm thấy Khóa API. Vui lòng cấu hình Khóa 'GEMINI_API_KEY' trong Streamlit Secrets.")
         else:
             # Thêm tin nhắn của người dùng vào lịch sử
@@ -960,4 +1228,4 @@ else:
                     st.markdown(full_response)
             
             # Thêm phản hồi của AI vào lịch sử
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            st.session_state.messages.append({"role": "assistant", "content": full_response)
