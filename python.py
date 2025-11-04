@@ -805,4 +805,102 @@ if uploaded_file is not None:
             if not df_financial_ratios_processed.empty:
                 df_ratios_final_display = df_financial_ratios_processed.copy()
                 
-                # Chỉ giữ lại các cột cần hiển thị: Chỉ tiêu, Năm 1, Năm 2, Năm 3, So sánh Y2 vs Y
+                # Chỉ giữ lại các cột cần hiển thị: Chỉ tiêu, Năm 1, Năm 2, Năm 3, So sánh Y2 vs Y1
+                cols_to_display = ['Chỉ tiêu', 'Năm 1', 'Năm 2', 'Năm 3', 'S.S Tuyệt đối (Y2 vs Y1)']
+                df_ratios_final_display = df_ratios_final_display[cols_to_display]
+                
+                df_ratios_final_display.columns = [
+                    'Chỉ tiêu',  
+                    Y1_Name,  
+                    Y2_Name,  
+                    Y3_Name,
+                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})'
+                ]
+                
+                st.markdown(f"##### Bảng tính Chỉ số Tài chính Chủ chốt ({Y1_Name} - {Y3_Name})")
+                
+                # Định dạng tùy chỉnh cho các chỉ tiêu: Tỷ lệ (chỉ số)
+                st.dataframe(df_ratios_final_display.style.apply(highlight_financial_items, axis=1).format({
+                    Y1_Name: format_vn_delta_ratio, # Tỷ lệ 2 thập phân
+                    Y2_Name: format_vn_delta_ratio, # Tỷ lệ 2 thập phân
+                    Y3_Name: format_vn_delta_ratio,
+                    f'So sánh Tuyệt đối ({Y2_Name} vs {Y1_Name})': format_vn_delta_ratio # Delta Tỷ lệ
+                }), use_container_width=True, hide_index=True)
+                
+                key_ratios_context = df_financial_ratios_processed.to_markdown(index=False)
+            else:
+                st.info("Không thể tính các Chỉ số Tài chính Chủ chốt do thiếu dữ liệu.")
+                key_ratios_context = "Không tìm thấy dữ liệu Chỉ tiêu Tài chính Chủ chốt."
+            
+            # -----------------------------------------------------
+            # [CẬP NHẬT] CẬP NHẬT CONTEXT CHO CHATBOT 
+            # -----------------------------------------------------
+            data_for_chat_context = f"""
+            **BẢNG CÂN ĐỐI KẾ TOÁN (Balance Sheet Analysis):**
+            {df_bs_processed.to_markdown(index=False)}
+            
+            **BÁO CÁO KẾT QUẢ KINH DOANH (Income Statement Analysis):**
+            {is_context}
+
+            **TỶ TRỌNG CHI PHÍ/DOANH THU THUẦN (%):**
+            {ratios_context}
+            
+            **CÁC HỆ SỐ TÀI CHÍNH CHỦ CHỐT (Thanh toán, Hoạt động, Cấu trúc Vốn, Sinh lời):**
+            {key_ratios_context}
+            """
+            st.session_state.data_for_chat = data_for_chat_context
+            
+            # Cập nhật tin nhắn chào mừng
+            if st.session_state.messages[0]["content"].startswith("Xin chào!") or st.session_state.messages[0]["content"].startswith("Phân tích"):
+                 st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí, **các chỉ số thanh toán**, **hiệu quả sử dụng vốn (tồn kho, phải thu, vốn lưu động)**, **cấu trúc vốn/hệ số nợ**, và **khả năng sinh lời (ROS, ROA, ROE)** của báo cáo này."
+
+
+    except ValueError as ve:
+        st.error(f"Lỗi cấu trúc dữ liệu: {ve}")
+        st.session_state.data_for_chat = None # Reset chat context
+    except Exception as e:
+        if "empty" not in str(e) and "columns" not in str(e) and "cannot index" not in str(e):
+             st.error(f"Có lỗi xảy ra khi đọc hoặc xử lý file: {e}.")
+        st.session_state.data_for_chat = None # Reset chat context
+
+else:
+    st.info("Vui lòng tải lên file Excel (Sheet 1 chứa BĐKT và KQKD) để bắt đầu phân tích.")
+    st.session_state.data_for_chat = None # Đảm bảo context được reset khi chưa có file
+
+# --- Chức năng 7: Khung Chatbot tương tác (Thay thế Mục 8 cũ) ---
+st.subheader("7. Trò chuyện và Hỏi đáp (Gemini AI) 💬") 
+if st.session_state.data_for_chat is None:
+    st.info("Vui lòng tải lên và xử lý báo cáo tài chính trước khi bắt đầu trò chuyện với AI.")
+else:
+    # Hiển thị lịch sử chat
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Xử lý input mới từ người dùng
+    if prompt := st.chat_input("Hỏi AI về báo cáo tài chính này..."):
+        api_key = st.secrets.get("GEMINI_API_KEY")
+        
+        if not api_key:
+            st.error("Lỗi: Không tìm thấy Khóa API. Vui lòng cấu hình Khóa 'GEMINI_API_KEY' trong Streamlit Secrets.")
+        else:
+            # Thêm tin nhắn của người dùng vào lịch sử
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            # Tạo phản hồi từ AI
+            with st.chat_message("assistant"):
+                with st.spinner("Đang gửi câu hỏi và chờ Gemini trả lời..."):
+                    
+                    full_response = get_chat_response(
+                        prompt, 
+                        st.session_state.messages, 
+                        st.session_state.data_for_chat, 
+                        api_key
+                    )
+                    
+                    st.markdown(full_response)
+            
+            # Thêm phản hồi của AI vào lịch sử
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
