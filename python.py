@@ -131,7 +131,7 @@ def safe_div(numerator, denominator):
     
     # Trường hợp chia số âm cho số rất nhỏ, dẫn đến số rất lớn (Inf/-Inf)
     if np.isinf(result) or np.isneginf(result):
-         return 0.0 
+        return 0.0 
     return result
 
 # === KẾT THÚC HÀM HỖ TRỢ ===
@@ -303,9 +303,9 @@ def process_financial_data(df_balance_sheet, df_income_statement):
         
         # Xử lý ROE khi VCSH <= 0 (Sử dụng np.nan để format sau)
         if avg_vcsh <= 0:
-             roe_ratio = np.nan # Đánh dấu là NaN để hiển thị rõ (format_vn_delta_ratio sẽ xử lý)
+            roe_ratio = np.nan # Đánh dấu là NaN để hiển thị rõ (format_vn_delta_ratio sẽ xử lý)
         else:
-             roe_ratio = safe_div(lnst, avg_vcsh) * 100
+            roe_ratio = safe_div(lnst, avg_vcsh) * 100
 
 
         # Thêm dữ liệu vào list (Theo thứ tự mới)
@@ -489,9 +489,9 @@ if uploaded_file is not None:
         
         df_raw_full['Chỉ tiêu'] = df_raw_full['Chỉ tiêu'].astype(str)
         if len(df_raw_full.columns) > 1:
-              search_col = df_raw_full['Chỉ tiêu'] + ' ' + df_raw_full[df_raw_full.columns[1]].astype(str)
+             search_col = df_raw_full['Chỉ tiêu'] + ' ' + df_raw_full[df_raw_full.columns[1]].astype(str)
         else:
-              search_col = df_raw_full['Chỉ tiêu']
+             search_col = df_raw_full['Chỉ tiêu']
         
         split_rows = df_raw_full[search_col.str.contains(split_keyword, case=False, na=False)]
         
@@ -531,9 +531,9 @@ if uploaded_file is not None:
                     df_raw_is.columns = new_header
                     col_to_rename = df_raw_is.columns[0]
                     if pd.isna(col_to_rename) or str(col_to_rename).strip() == '':
-                         df_raw_is.rename(columns={col_to_rename: 'Chỉ tiêu'}, inplace=True)
+                        df_raw_is.rename(columns={col_to_rename: 'Chỉ tiêu'}, inplace=True)
                     else:
-                         df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
+                        df_raw_is = df_raw_is.rename(columns={df_raw_is.columns[0]: 'Chỉ tiêu'})
         
         # --- TIỀN XỬ LÝ (PRE-PROCESSING) DỮ LIỆU ---
         
@@ -868,7 +868,7 @@ if uploaded_file is not None:
             
             # Cập nhật tin nhắn chào mừng
             if st.session_state.messages[0]["content"].startswith("Xin chào!") or st.session_state.messages[0]["content"].startswith("Phân tích"):
-                 st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí, **các chỉ số thanh toán**, **hiệu quả sử dụng vốn (tồn kho, phải thu, vốn lưu động)**, **cấu trúc vốn/hệ số nợ**, và **khả năng sinh lời (ROS, ROA, ROE)** của báo cáo này."
+                st.session_state.messages[0]["content"] = f"Phân tích 3 kỳ ({Y1_Name} đến {Y3_Name}) đã hoàn tất! Bây giờ bạn có thể hỏi tôi bất kỳ điều gì về Bảng CĐKT, KQKD, tỷ trọng chi phí, **các chỉ số thanh toán**, **hiệu quả sử dụng vốn (tồn kho, phải thu, vốn lưu động)**, **cấu trúc vốn/hệ số nợ**, và **khả năng sinh lời (ROS, ROA, ROE)** của báo cáo này."
 
 
     except ValueError as ve:
@@ -895,9 +895,17 @@ else:
 
     # Xử lý input mới từ người dùng
     if prompt := st.chat_input("Hỏi AI về báo cáo tài chính này..."):
+        # Lấy API key từ Streamlit secrets (giả định đã được thiết lập)
+        # Trong môi trường Canvas, st.secrets.get("GEMINI_API_KEY") sẽ không hoạt động.
+        # Ta giả định môi trường Canvas sẽ cung cấp API Key hoặc ứng dụng Streamlit chạy bên ngoài đã được cấu hình.
+        # Giữ nguyên logic kiểm tra API key mặc dù trong Canvas nó không cần thiết.
         api_key = st.secrets.get("GEMINI_API_KEY")
         
+        # Trong môi trường Streamlit Cloud hoặc local, nếu API key không có, báo lỗi.
+        # Trong môi trường Canvas, __api_key sẽ được cung cấp, nhưng Streamlit không sử dụng biến global này.
         if not api_key:
+            # Chỉ hiển thị cảnh báo này nếu không phải môi trường Canvas/External API Key
+            # Nếu đang chạy trong môi trường Streamlit thông thường, cần API Key.
             st.error("Lỗi: Không tìm thấy Khóa API. Vui lòng cấu hình Khóa 'GEMINI_API_KEY' trong Streamlit Secrets.")
         else:
             # Thêm tin nhắn của người dùng vào lịch sử
