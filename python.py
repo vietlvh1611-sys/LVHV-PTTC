@@ -3,12 +3,12 @@ import pandas as pd
 from google import genai
 from google.genai.errors import APIError
 import numpy as np
-import io # Thêm thư viện IO để xử lý file trong bộ nhớ
-try:
-    from docxtpl import DocxTemplate # Thư viện mới để điền file Word
-except ImportError:
-    st.error("Lỗi: Vui lòng cài đặt thư viện 'docxtpl' (pip install docxtpl) để chạy chức năng xuất Word.")
-    st.stop()
+import io # Thư viện IO (Mặc dù không dùng docxtpl nữa, giữ lại cũng không sao)
+# try:
+#     from docxtpl import DocxTemplate 
+# except ImportError:
+#     # Không cần báo lỗi nữa vì đã xóa chức năng
+#     pass 
 
 
 # Tương thích cao nhất: System Instruction được truyền bằng cách ghép vào User Prompt
@@ -123,46 +123,6 @@ def safe_div(numerator, denominator):
          return 0.0 
     return result
 
-# === [MỚI] HÀM HỖ TRỢ XUẤT BÁO CÁO WORD (MỤC 8) ===
-
-def get_report_value(df, chi_tieu_keyword, col_name, unit_divisor=1_000_000):
-    """
-    Hàm helper để lấy một giá trị cụ thể từ DataFrame đã xử lý, 
-    dùng cho việc điền báo cáo Word.
-    Mặc định chia cho 1 triệu (đơn vị: triệu đồng).
-    """
-    try:
-        # Sử dụng get_value (đã fix lỗi) để lấy giá trị gốc an toàn
-        # Chuyển đổi tên cột chung (Năm 3) sang tên cột gốc
-        # (Giả định df là df_processed đã có cột 'Năm 3', 'Delta (Y3 vs Y2)', v.v.)
-        val = get_value(df, chi_tieu_keyword, col_name)
-
-        # Nếu unit_divisor = 0, trả về số gốc (dùng cho Tỷ lệ %)
-        if unit_divisor == 0:
-            return val 
-        
-        return val / unit_divisor
-    except Exception:
-        return 0.0
-
-def format_report_number(val, is_delta=False):
-    """
-    Định dạng số cho báo cáo Word (triệu đồng, 1 chữ số thập phân, dấu phẩy, số âm trong ngoặc).
-    """
-    if pd.isna(val) or (val == 0 and is_delta): # Ẩn số 0 nếu là delta
-        return "" 
-    if val == 0 and not is_delta:
-        return "0"
-    
-    # Mặc định 1 chữ số thập phân cho triệu đồng
-    val = round(val, 1) 
-    
-    # Dùng chuẩn VN (dấu phẩy thập phân)
-    formatted_val = "{:,.1f}".format(abs(val)).replace(",", "TEMP_SEP").replace(".", ",").replace("TEMP_SEP", ".")
-    
-    if val < 0:
-        return f"({formatted_val})" # Số âm trong ngoặc
-    return formatted_val
 # === KẾT THÚC HÀM HỖ TRỢ ===
 
 
@@ -769,124 +729,9 @@ if uploaded_file is not None:
                         st.session_state.messages.append({"role": "assistant", "content": full_response})
 
             # -----------------------------------------------------------------
-            # [SẮP XẾP LẠI & CẬP NHẬT] CHỨC NĂNG 8: TẢI BÁO CÁO PHÂN TÍCH (WORD)
-            # [FIX] Ánh xạ MỚI theo yêu cầu:
-            # Word 2024 ({{..._Y2}}) <- Excel 'Năm 2' (Y2_Name)
-            # Word 2023 (Delta)     <- Excel 'Năm 1' (Y1_Name)
+            # [XÓA] MỤC 8 ĐÃ BỊ XÓA THEO YÊU CẦU
             # -----------------------------------------------------------------
-            st.subheader("8. Tải Báo cáo Phân tích (Word) 📝")
-            st.markdown(f"**ĐÃ CẬP NHẬT:** Chức năng này sẽ điền dữ liệu (Năm={Y2_Name} và Năm={Y1_Name}) vào file mẫu `Mau_BCTC_Template.docx` (sử dụng các thẻ `{{..._Y2}}` và `{{..._Y1}}`).")
-
-            if st.button("Tạo và Tải Báo cáo (Điền tự động)"):
-                with st.spinner("Đang tạo báo cáo Word..."):
-                    try:
-                        # 1. Mở file mẫu (Đảm bảo tên file là Mau_BCTC_Template.docx)
-                        doc = DocxTemplate("Mau_BCTC_Template.docx")
-
-                        # 2. Tạo Context (Dữ liệu để điền)
-                        # ÁNH XẠ MỚI: Y2 = Năm 2 (2023), Y1 = Năm 1 (2022)
-                        
-                        context = {
-                            # (Các thẻ mô tả văn bản cần được thêm thủ công nếu muốn)
-                            # 'CONG_TY_HOAT_DONG_CHINH': "Thương mại ABC", 
-                            # 'TSDH_LY_DO_BIEN_DONG': "Đầu tư thêm XZY",
-                        }
-                        
-                        # --- Phân tích Tài sản ---
-                        # Dùng 'Năm 2' cho Y2, 'Delta (Y2 vs Y1)' cho DELTA_Y2_Y1
-                        tts_y2 = get_report_value(df_bs_processed, 'TỔNG CỘNG TÀI SẢN', 'Năm 2')
-                        tts_delta_y2_y1 = get_report_value(df_bs_processed, 'TỔNG CỘNG TÀI SẢN', 'Delta (Y2 vs Y1)')
-                        context['TTS_Y2'] = format_report_number(tts_y2)
-                        context['TTS_DELTA_Y2_Y1'] = format_report_number(tts_delta_y2_y1, is_delta=True)
-                        
-                        tsnh_y2 = get_report_value(df_bs_processed, 'Tài sản ngắn hạn|TS ngắn hạn', 'Năm 2')
-                        tsnh_delta_y2_y1 = get_report_value(df_bs_processed, 'Tài sản ngắn hạn|TS ngắn hạn', 'Delta (Y2 vs Y1)')
-                        tsnh_growth_y2_y1 = get_report_value(df_bs_processed, 'Tài sản ngắn hạn|TS ngắn hạn', 'Growth (Y2 vs Y1)', unit_divisor=0)
-                        context['TSNH_Y2'] = format_report_number(tsnh_y2)
-                        context['TSNH_DELTA_Y2_Y1'] = format_report_number(tsnh_delta_y2_y1, is_delta=True)
-                        context['TSNH_GROWTH_Y2_Y1'] = format_report_number(tsnh_growth_y2_y1) # %
-
-                        # Tiền
-                        tien_y2 = get_report_value(df_bs_processed, 'Tiền và các khoản tương đương tiền', 'Năm 2')
-                        tien_delta_y2_y1 = get_report_value(df_bs_processed, 'Tiền và các khoản tương đương tiền', 'Delta (Y2 vs Y1)')
-                        tien_growth_y2_y1 = get_report_value(df_bs_processed, 'Tiền và các khoản tương đương tiền', 'Growth (Y2 vs Y1)', unit_divisor=0)
-                        tien_ty_trong_tsnh_y2 = safe_div(tien_y2, tsnh_y2) * 100 if tsnh_y2 != 0 else 0
-                        context['TIEN_Y2'] = format_report_number(tien_y2)
-                        context['TIEN_DELTA_Y2_Y1'] = format_report_number(tien_delta_y2_y1, is_delta=True)
-                        context['TIEN_GROWTH_Y2_Y1'] = format_report_number(tien_growth_y2_y1)
-                        context['TIEN_TY_TRONG_TSNH_Y2'] = format_report_number(tien_ty_trong_tsnh_y2)
-
-                        # Hàng tồn kho
-                        htk_y2 = get_report_value(df_bs_processed, 'Hàng tồn kho', 'Năm 2')
-                        htk_delta_y2_y1 = get_report_value(df_bs_processed, 'Hàng tồn kho', 'Delta (Y2 vs Y1)')
-                        htk_growth_y2_y1 = get_report_value(df_bs_processed, 'Hàng tồn kho', 'Growth (Y2 vs Y1)', unit_divisor=0)
-                        context['HTK_Y2'] = format_report_number(htk_y2)
-                        context['HTK_DELTA_Y2_Y1'] = format_report_number(htk_delta_y2_y1, is_delta=True)
-                        context['HTK_GROWTH_Y2_Y1'] = format_report_number(htk_growth_y2_y1)
-
-                        # --- Phân tích Nguồn vốn ---
-                        # Nợ ngắn hạn
-                        nnh_y2 = get_report_value(df_bs_processed, 'Nợ ngắn hạn', 'Năm 2')
-                        nnh_delta_y2_y1 = get_report_value(df_bs_processed, 'Nợ ngắn hạn', 'Delta (Y2 vs Y1)')
-                        nnh_growth_y2_y1 = get_report_value(df_bs_processed, 'Nợ ngắn hạn', 'Growth (Y2 vs Y1)', unit_divisor=0)
-                        context['NNH_Y2'] = format_report_number(nnh_y2)
-                        context['NNH_DELTA_Y2_Y1'] = format_report_number(nnh_delta_y2_y1, is_delta=True)
-                        context['NNH_GROWTH_Y2_Y1'] = format_report_number(nnh_growth_y2_y1)
-                        
-                        # Vốn chủ sở hữu
-                        vcsh_y2 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Năm 2')
-                        vcsh_delta_y2_y1 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Delta (Y2 vs Y1)')
-                        vcsh_growth_y2_y1 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Growth (Y2 vs Y1)', unit_divisor=0)
-                        vcsh_ty_trong_tnv_y2 = get_report_value(df_bs_processed, 'Vốn chủ sở hữu', 'Tỷ trọng Năm 2 (%)', unit_divisor=0) # Sửa 'Năm 3 (%)' -> 'Năm 2 (%)'
-                        context['VCSH_Y2'] = format_report_number(vcsh_y2)
-                        context['VCSH_DELTA_Y2_Y1'] = format_report_number(vcsh_delta_y2_y1, is_delta=True)
-                        context['VCSH_GROWTH_Y2_Y1'] = format_report_number(vcsh_growth_y2_y1)
-                        context['VCSH_TY_TRONG_TNV_Y2'] = format_report_number(vcsh_ty_trong_tnv_y2)
-
-                        # --- Phân tích KQKD ---
-                        # Dùng 'Năm 2' cho Y2, 'S.S Tuyệt đối (Y2 vs Y1)' cho DELTA_Y2_Y1
-                        dt_y2 = get_report_value(df_is_processed, 'Doanh thu thuần', 'Năm 2')
-                        dt_delta_y2_y1 = get_report_value(df_is_processed, 'Doanh thu thuần', 'S.S Tuyệt đối (Y2 vs Y1)')
-                        dt_growth_y2_y1 = get_report_value(df_is_processed, 'Doanh thu thuần', 'S.S Tương đối (%) (Y2 vs Y1)', unit_divisor=0)
-                        context['DT_Y2'] = format_report_number(dt_y2)
-                        context['DT_DELTA_Y2_Y1'] = format_report_number(dt_delta_y2_y1, is_delta=True)
-                        context['DT_GROWTH_Y2_Y1'] = format_report_number(dt_growth_y2_y1)
-
-                        # Tỷ trọng Giá vốn / Doanh thu
-                        gvhb_ty_trong_dt_y2 = get_report_value(df_ratios_processed, 'Giá vốn hàng bán', 'Năm 2', unit_divisor=0) # Sửa 'Năm 3' -> 'Năm 2'
-                        context['GVHB_TY_TRONG_DT_Y2'] = format_report_number(gvhb_ty_trong_dt_y2)
-
-                        # Lợi nhuận sau thuế
-                        lnst_y2 = get_report_value(df_is_processed, 'Lợi nhuận sau thuế', 'Năm 2')
-                        lnst_delta_y2_y1 = get_report_value(df_is_processed, 'Lợi nhuận sau thuế', 'S.S Tuyệt đối (Y2 vs Y1)')
-                        context['LNST_Y2'] = format_report_number(lnst_y2)
-                        context['LNST_DELTA_Y2_Y1'] = format_report_number(lnst_delta_y2_y1, is_delta=True)
-                        
-                        # (BẠN CẦN LÀM TƯƠNG TỰ CHO TẤT CẢ CÁC THẺ TAG CÒN LẠI MÀ BẠN CẦN)
-                        
-                        # 3. Render (Điền dữ liệu vào file)
-                        doc.render(context)
-                        
-                        # 4. Lưu vào bộ nhớ (in-memory)
-                        f = io.BytesIO()
-                        doc.save(f)
-                        f.seek(0)
-
-                        # 5. Tạo nút tải xuống
-                        st.download_button(
-                            label="Tải xuống Báo cáo đã điền (Word) ⬇️",
-                            data=f,
-                            file_name=f"Bao_cao_Phan_tich_{Y2_Name}_vs_{Y1_Name}.docx", # Tên file theo Y2 và Y1
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        )
-                        st.success("Tạo báo cáo thành công!")
-
-                    except FileNotFoundError:
-                        st.error("Lỗi: Không tìm thấy file 'Mau_BCTC_Template.docx'. Vui lòng đảm bảo file này nằm cùng thư mục với file Python và đã được sửa theo định dạng {{thẻ}}.")
-                    except Exception as e:
-                        st.error(f"Đã xảy ra lỗi khi tạo file Word: {e}")
-                        st.error("Lưu ý: Đảm bảo bạn đã cài 'pip install docxtpl' và file mẫu không bị lỗi.")
-
+            
             # --- KẾT THÚC MỤC 8 ---
 
     # [SỬA LỖI] Hai khối 'except' này phải nằm ngang hàng với 'try' (đã sửa)
