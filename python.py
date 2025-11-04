@@ -1228,4 +1228,4 @@ else:
                     st.markdown(full_response)
             
             # Thêm phản hồi của AI vào lịch sử
-            st.session_state.messages.append({"role": "assistant", "content": full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response)\
